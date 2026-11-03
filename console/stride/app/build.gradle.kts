@@ -105,10 +105,21 @@ android {
         targetCompatibility = JavaVersion.VERSION_17
     }
     kotlinOptions { jvmTarget = "17" }
+    // Pure logic (laps, the recording) is tested on the PC, not the console.
+    // Default return values keep a stray Log.i in that code from failing a
+    // test with "Method ... not mocked" — the log line is not what is tested.
+    testOptions { unitTests.isReturnDefaultValues = true }
 }
 
 dependencies {
     // Plain Java Paho client — the Android "service" variant needs AndroidX,
     // which this app deliberately avoids.
     implementation("org.eclipse.paho:org.eclipse.paho.client.mqttv3:1.2.5")
+
+    // Test-only, so the APK still ships with Paho as its one dependency.
+    // org.json is here because android.jar's copy is stubs: on the JVM every
+    // method returns null or 0, and a JSON round-trip test would be testing
+    // nothing. The real library is the same API the console runs.
+    testImplementation("junit:junit:4.13.2")
+    testImplementation("org.json:json:20240303")
 }
