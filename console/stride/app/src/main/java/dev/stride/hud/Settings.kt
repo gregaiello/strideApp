@@ -86,6 +86,10 @@ class Settings(context: Context) {
         const val BRIGHTNESS = "brightness"       // "dim" | "normal" | "bright"
         const val KEEP_AWAKE = "keep_awake"
 
+        // --- saved walks (fork-only) ---
+        /** "barometric" | "generic": the device a .fit claims to come from. */
+        const val FIT_IDENTITY = "fit_identity"
+
         /**
          * How fast a guided walk may move the deck, as three named presets
          * rather than two millisecond fields.
@@ -381,6 +385,14 @@ class Settings(context: Context) {
     fun clock24(): Boolean = prefs.getBoolean(CLOCK_24, true)
     fun keepAwake(): Boolean = prefs.getBoolean(KEEP_AWAKE, true)
 
+    // --- saved walks (fork-only) ----------------------------------------------
+
+    /**
+     * On by default in this fork: without it, Strava swaps the treadmill's
+     * climb for its own map's hills (see FitIdentity.BAROMETRIC).
+     */
+    fun fitIdentity(): String = prefs.getString(FIT_IDENTITY, "barometric") ?: "barometric"
+
     fun brightness(): Float = when (prefs.getString(BRIGHTNESS, "normal")) {
         "dim" -> 0.35f
         "bright" -> 1.0f
@@ -432,6 +444,7 @@ class Settings(context: Context) {
         .put(CLOCK_24, clock24())
         .put(BRIGHTNESS, prefs.getString(BRIGHTNESS, "normal"))
         .put(KEEP_AWAKE, keepAwake())
+        .put(FIT_IDENTITY, fitIdentity())
 
     /**
      * Save one value, typed by what the key expects rather than by what

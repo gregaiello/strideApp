@@ -132,6 +132,11 @@ class FitActivityTest {
         assertEquals(FitWriter.fitTime(1_262_304_000_000), fid[4])
     }
 
+    /** R0 variant D: the only identity Strava kept the file's elevation for. */
+    @Test fun barometricConstant() {
+        assertEquals(FitIdentity(1, 3906), FitIdentity.BAROMETRIC)
+    }
+
     /** Writes a file the Python decoder (fit-tool) can check independently. */
     @Test fun writesSampleForInspection() {
         val s = walk(1200, hr = { 130 + it / 30 }, alt = { it * 0.05 }, moving = { it < 500 || it >= 560 })

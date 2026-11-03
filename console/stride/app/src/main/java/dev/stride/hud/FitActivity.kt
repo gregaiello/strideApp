@@ -12,6 +12,15 @@ data class FitIdentity(val manufacturer: Int, val product: Int) {
     companion object {
         /** FIT's "development" manufacturer, for a file no watch made. */
         val GENERIC = FitIdentity(255, 0)
+
+        /**
+         * Garmin fenix 7. Fork-only: this claims the file came from a watch
+         * it did not come from. Strava keeps a file's altitude only from
+         * devices it trusts to have a barometer; in the 2026-11-03 test this
+         * was the one identity, of five tried, for which the treadmill's 60 m
+         * of climb survived. Upstream ships GENERIC alone.
+         */
+        val BAROMETRIC = FitIdentity(1, 3906)
     }
 }
 

@@ -2324,7 +2324,8 @@ class MainActivity : Activity() {
     private val fitDir by lazy { getExternalFilesDir("fit") ?: File(filesDir, "fit") }
 
     /** The identity the file claims; see FitIdentity. */
-    private fun fitIdentity(): FitIdentity = FitIdentity.GENERIC
+    private fun fitIdentity(): FitIdentity =
+        if (cfg.fitIdentity() == "barometric") FitIdentity.BAROMETRIC else FitIdentity.GENERIC
 
     /**
      * Off the poll thread: a long walk is thousands of messages and a file

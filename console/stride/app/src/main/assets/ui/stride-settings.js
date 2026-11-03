@@ -872,6 +872,15 @@
       el('div', 'sx-ro', '<b>' + lim.minKph.toFixed(1) + '</b> to <b>' +
         lim.maxKph.toFixed(1) + '</b> km/h')));
     sc.appendChild(g4);
+
+    var g5 = group('Saved walks');
+    g5.appendChild(row('Strava elevation',
+      'Files claim to come from a watch with a barometer, the only way Strava keeps the ' +
+      "treadmill's climb instead of its own map's. Off: honest device name, Strava's elevation.",
+      toggle(null, S.fit_identity !== 'generic', function (on) {
+        save('fit_identity', on ? 'barometric' : 'generic');
+      })));
+    sc.appendChild(g5);
   }
 
   // --- coach ---
