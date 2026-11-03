@@ -53,6 +53,38 @@ class FitExportTest {
         assertEquals(0, out.listFiles()!!.size)
     }
 
+    /** A walk whose export never finished is tried again at the next start. */
+    @Test fun exportedRecordingLeavesTheBacklog() {
+        val recs = tmp.newFolder(); val out = tmp.newFolder()
+        val r = recording(recs, start2026, start2026, "Ann")
+        assertEquals(listOf(r), FitExport.pending(recs))
+        FitExport.export(r, out, FitIdentity.GENERIC, rome)
+        assertEquals(emptyList<File>(), FitExport.pending(recs))
+    }
+
+    @Test fun tooShortLeavesTheBacklogToo() {
+        val recs = tmp.newFolder(); val out = tmp.newFolder()
+        val r = recording(recs, start2026, start2026, "Ann", seconds = 60)
+        assertNull(FitExport.export(r, out, FitIdentity.GENERIC, rome))
+        assertEquals(emptyList<File>(), FitExport.pending(recs))
+    }
+
+    @Test fun failedExportStaysInTheBacklog() {
+        val recs = tmp.newFolder()
+        val r = recording(recs, start2026, start2026, "Ann")
+        val notADir = tmp.newFile("blocked")
+        try { FitExport.export(r, notADir, FitIdentity.GENERIC, rome) } catch (_: Exception) {}
+        assertEquals(listOf(r), FitExport.pending(recs))
+    }
+
+    @Test fun staleTmpIsSwept() {
+        val out = tmp.newFolder()
+        File(out, "2026-11-03_0712_Ann.fit.tmp").writeText("half")
+        File(out, "2026-11-03_0712_Ann.fit").writeText("kept")
+        FitExport.sweepPartial(out)
+        assertEquals(listOf("2026-11-03_0712_Ann.fit"), out.list()!!.toList())
+    }
+
     @Test fun writesDecodableFile() {
         val recs = tmp.newFolder(); val out = tmp.newFolder()
         val f = FitExport.export(recording(recs, start2026, start2026, "Ann"), out, FitIdentity.GENERIC, rome)!!

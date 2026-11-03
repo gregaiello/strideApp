@@ -2328,11 +2328,14 @@ class MainActivity : Activity() {
 
     /**
      * Off the poll thread: a long walk is thousands of messages and a file
-     * write, and the belt is read every 200 ms. A failure is logged and
-     * the recording kept, so the file can be made again later.
+     * write, and the belt is read every 200 ms. One thread, so exports never
+     * race for a name. A failure is logged and the recording left unmarked,
+     * so the next start-up tries it again (FitExport.pending).
      */
+    private val fitExports = java.util.concurrent.Executors.newSingleThreadExecutor()
+
     private fun exportFit(rec: File) {
-        thread(name = "fit-export") {
+        fitExports.execute {
             try {
                 FitExport.export(rec, fitDir, fitIdentity())?.let { Log.i(TAG, "fit: wrote ${it.name}") }
             } catch (e: Exception) {
@@ -2404,9 +2407,17 @@ class MainActivity : Activity() {
         try {
             val closed = Recording.closeOrphans(recordingsDir)
             if (closed.isNotEmpty()) Log.i(TAG, "recording: closed ${closed.size} interrupted walk(s)")
-            closed.forEach(::exportFit)
         } catch (e: Exception) {
             Log.w(TAG, "recording: could not sweep interrupted walks", e)
+        }
+        // Listed now, while nothing can be recording, so a walk started
+        // before the queue reaches the list is never exported half-written.
+        try {
+            val backlog = FitExport.pending(recordingsDir)
+            fitExports.execute { FitExport.sweepPartial(fitDir) }
+            backlog.forEach(::exportFit)
+        } catch (e: Exception) {
+            Log.w(TAG, "fit: could not list the backlog", e)
         }
 
         val ui = chosenUi()
