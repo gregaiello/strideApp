@@ -51,6 +51,8 @@ data class Recorded(
     val status: String?,
     /** The start, corrected after the fact; 0 means the date is unknowable. */
     val correctedStartWallMs: Long,
+    /** The board's count for the walk; 0 in recordings made before it was kept. */
+    val calories: Double = 0.0,
 )
 
 /**
@@ -96,6 +98,7 @@ class Recording private constructor(val file: File) {
             var who = ""
             var status: String? = null
             var fixed = 0L
+            var kcal = 0.0
             val samples = mutableListOf<Sample>()
             val laps = mutableListOf<Lap>()
             val extras = mutableListOf<Extra>()
@@ -107,14 +110,17 @@ class Recording private constructor(val file: File) {
                         "s" -> samples.add(sampleOf(o))
                         "l" -> laps.add(lapOf(o))
                         "x" -> extras.add(Extra(o.getLong("tMs"), o.getString("ch"), o.getDouble("val")))
-                        "e" -> { status = o.getString("status"); fixed = o.getLong("startFixed") }
+                        "e" -> {
+                            status = o.getString("status"); fixed = o.getLong("startFixed")
+                            kcal = o.optDouble("kcal", 0.0)
+                        }
                     }
                 } catch (_: JSONException) {
                     // A line that parsed but lacks a field is as good as a
                     // truncated one. Skipping it keeps the rest of the walk.
                 }
             }
-            return Recorded(file, version, start, who, samples, laps, extras, status, fixed)
+            return Recorded(file, version, start, who, samples, laps, extras, status, fixed, kcal)
         }
 
         /**
@@ -198,8 +204,9 @@ class Recording private constructor(val file: File) {
         line(JSONObject().put("t", "x").put("tMs", e.tMs).put("ch", e.channel).put("val", e.value))
 
     /** @param correctedStartWallMs the start once the clock is believed; 0 = unknown. */
-    @Synchronized fun finish(status: String, correctedStartWallMs: Long) {
-        line(JSONObject().put("t", "e").put("status", status).put("startFixed", correctedStartWallMs))
+    @Synchronized fun finish(status: String, correctedStartWallMs: Long, calories: Double = 0.0) {
+        line(JSONObject().put("t", "e").put("status", status).put("startFixed", correctedStartWallMs)
+            .put("kcal", calories))
         close()
     }
 

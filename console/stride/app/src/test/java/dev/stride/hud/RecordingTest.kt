@@ -23,7 +23,7 @@ class RecordingTest {
         val lap = Lap(1, 0, 3000, 3.0, 7.5, 140, 0.5, 0.0)
         r.lap(lap)
         r.extra(Extra(2500, "vo2", 30.25))
-        r.finish("done", 1_762_000_000_000)
+        r.finish("done", 1_762_000_000_000, calories = 123.0)
 
         val back = Recording.read(r.file)
         assertEquals(Recording.VERSION, back.version)
@@ -34,6 +34,7 @@ class RecordingTest {
         assertEquals(listOf(Extra(2500, "vo2", 30.25)), back.extras)
         assertEquals("done", back.status)
         assertEquals(1_762_000_000_000, back.correctedStartWallMs)
+        assertEquals(123.0, back.calories, 1e-9)
     }
 
     @Test fun writesDotDecimalsUnderGermanLocale() {
