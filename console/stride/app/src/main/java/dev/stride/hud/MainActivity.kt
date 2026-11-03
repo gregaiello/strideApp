@@ -19,6 +19,7 @@ import android.webkit.JavascriptInterface
 import android.webkit.WebView
 import org.json.JSONArray
 import org.json.JSONObject
+import java.io.File
 import kotlin.concurrent.thread
 
 /**
@@ -37,6 +38,13 @@ class MainActivity : Activity() {
         const val TAG = FitProConnection.TAG
         const val ACTION_USB_PERMISSION = "dev.stride.hud.USB_PERMISSION"
         const val POLL_MS = 200L
+
+        /** One sample a second: what a sport watch records, and plenty for
+         *  a .FIT. 5 Hz would be five times the file for no extra detail. */
+        const val SAMPLE_MS = 1000L
+
+        /** How long the lap readout shows the lap a press just closed. */
+        const val LAP_FLASH_MS = 3000L
 
         /** Request code for the location permission a BLE scan needs. */
         const val SCAN_PERMISSION = 1
@@ -774,6 +782,18 @@ class MainActivity : Activity() {
      */
     @Volatile private var sessionStartedUptime = 0L
 
+    /** Lap marks for the walk in progress. See LapTracker for why a lap is a
+     *  mark and never an instruction to the belt. */
+    private val laps = LapTracker()
+
+    /** The per-second record of a named walker's workout; null for guests,
+     *  between workouts, and after a write fails. */
+    @Volatile private var recording: Recording? = null
+    @Volatile private var lastSampleMs = -1L
+    @Volatile private var lapFlashIndex = 0
+    @Volatile private var lapFlashUntil = 0L
+    private val recordingsDir by lazy { File(filesDir, "recordings").apply { mkdirs() } }
+
     @Volatile private var maxKph = 19.0
     @Volatile private var minKph = 1.6
     @Volatile private var maxGrade = 12.0
@@ -832,6 +852,7 @@ class MainActivity : Activity() {
             workout = WORKOUT
             clearPlan()
             resetSession()
+            startRecording()
             session = Session.WARMUP
             activeSince = SystemClock.elapsedRealtime()
             phaseEndsAt = activeSince + cfg.warmupMs()
@@ -878,6 +899,7 @@ class MainActivity : Activity() {
 
             workout = WORKOUT
             resetSession()
+            startRecording()
             session = Session.ACTIVE
             activeSince = SystemClock.elapsedRealtime()
             phaseEndsAt = 0L
@@ -949,6 +971,7 @@ class MainActivity : Activity() {
 
             workout = WORKOUT
             resetSession()
+            startRecording()
             session = Session.ACTIVE
             activeSince = SystemClock.elapsedRealtime()
             phaseEndsAt = 0L
@@ -1112,6 +1135,7 @@ class MainActivity : Activity() {
             summaryLine = ""
             summaryUrl = ""
             summarySpoken = false
+            abandonRecording()
             clearPlan()
             resetSession()
             // Leaving the summary ends any easing still in flight. The console
@@ -1170,6 +1194,23 @@ class MainActivity : Activity() {
         }
 
         /** Incline has no interlock — the board services it in any state. */
+        /**
+         * Close the current lap and open the next.
+         *
+         * A mark and nothing else: no speed, no incline, no session change.
+         * Only while the belt is live, and not with the safety key out - a
+         * press then is somebody steadying themselves, not a split.
+         */
+        @JavascriptInterface fun lap() {
+            if (!Session.isMoving(session) || dmk) return
+            val lap = laps.mark(sessionMs(), elapsedSec(), sessionDistance) ?: return
+            writeRecording { it.lap(lap) }
+            lapFlashIndex = lap.index
+            lapFlashUntil = SystemClock.elapsedRealtime() + LAP_FLASH_MS
+            Log.i(TAG, "lap ${lap.index}: ${"%.0f".format(lap.activeSec)} s, " +
+                    "${"%.0f".format(lap.distanceM)} m")
+        }
+
         @JavascriptInterface fun incline(delta: Double) {
             // Touching the hill takes it back from the plan until the next
             // segment. Same rule as speed abandoning its ramp: the person on the
@@ -1932,6 +1973,7 @@ class MainActivity : Activity() {
             plan = planName,
         ))
         if (earned.isNotEmpty()) Log.i(TAG, "achievements: ${earned.joinToString("; ")}")
+        finishRecording()
         if (stopping) return          // the wind-down parks the machine after it
         rampReason = ""
         targetKph = 0.0
@@ -2203,6 +2245,97 @@ class MainActivity : Activity() {
         return if (started < SANE_EPOCH_MS) 0L else started
     }
 
+    /** Milliseconds since this session began, on the clock NTP cannot move. */
+    private fun sessionMs(): Long = SystemClock.elapsedRealtime() - sessionStartedUptime
+
+    /**
+     * Begin laps, and a recording if somebody is walking.
+     *
+     * Guests get laps on screen but no file, the same rule History follows:
+     * nobody has agreed to be remembered.
+     */
+    private fun startRecording() {
+        recording?.let { r -> writeRecording { r.finish("interrupted", 0L) } }
+        recording = null
+        laps.start(0L, 0.0, 0.0, 0.0)
+        lastSampleMs = -1L
+        lapFlashUntil = 0L
+        if (walker.isBlank()) return
+        recording = try {
+            Recording.begin(recordingsDir, sessionStartedAt, walker)
+        } catch (e: Exception) {
+            Log.w(TAG, "recording: could not start", e)
+            null
+        }
+    }
+
+    /**
+     * Once a second while a workout is live or paused.
+     *
+     * Paused seconds are recorded too, marked not moving, so the file can say
+     * where the pauses were; lap time already leaves them out.
+     */
+    private fun recordTick(snap: Snapshot) {
+        if (!Session.isMoving(session) && session != Session.PAUSED) return
+        val t = sessionMs()
+        if (lastSampleMs >= 0L && t - lastSampleMs < SAMPLE_MS) return
+        lastSampleMs = t
+        laps.sample(t, snap.elapsed, snap.distance, snap.pulse, climbM)
+        writeRecording {
+            it.sample(Sample(t, snap.elapsed, snap.distance, snap.speed, snap.incline,
+                             climbM, snap.pulse, Session.isMoving(session)))
+        }
+    }
+
+    /** Close the last lap and the file, or throw the file away if the walk
+     *  was too short for History to count it. */
+    private fun finishRecording() {
+        laps.finish(sessionMs(), elapsedSec(), sessionDistance)
+            ?.let { last -> writeRecording { it.lap(last) } }
+        val r = recording ?: return
+        recording = null
+        try {
+            if (sessionDistance < History.MIN_DISTANCE_M ||
+                accumulatedMs / 1000.0 < History.MIN_ELAPSED_S) {
+                r.discard()
+                Log.i(TAG, "recording: walk too short, discarded")
+            } else {
+                r.finish("done", sessionStartWall())
+                Log.i(TAG, "recording: saved ${r.file.name}")
+            }
+        } catch (e: Exception) {
+            Log.w(TAG, "recording: could not close", e)
+        }
+    }
+
+    /** Leaving for the welcome screen without a summary. Kept, not deleted. */
+    private fun abandonRecording() {
+        val r = recording
+        recording = null
+        if (r != null) {
+            try { r.finish("interrupted", sessionStartWall()) } catch (e: Exception) {
+                Log.w(TAG, "recording: could not close", e)
+            }
+        }
+        laps.reset()
+    }
+
+    /**
+     * A failed write stops the recording, never the poll loop.
+     *
+     * A full disk or a vanished file is a lost .FIT; letting the exception
+     * reach pollLoop would be a treadmill that stops being driven.
+     */
+    private inline fun writeRecording(block: (Recording) -> Unit) {
+        val r = recording ?: return
+        try {
+            block(r)
+        } catch (e: Exception) {
+            Log.w(TAG, "recording: write failed, stopping it", e)
+            recording = null
+        }
+    }
+
     private fun elapsedSec(): Double {
         val live = if (Session.isMoving(session))
             SystemClock.elapsedRealtime() - activeSince else 0L
@@ -2227,6 +2360,15 @@ class MainActivity : Activity() {
         refreshWalkerHrMax()
         applyBrightness()
         applyStrap()
+
+        // Before the page exists, so no walk can have started yet: anything
+        // still open on disk was cut off by a kill or a power cut.
+        try {
+            val closed = Recording.closeOrphans(recordingsDir)
+            if (closed.isNotEmpty()) Log.i(TAG, "recording: closed ${closed.size} interrupted walk(s)")
+        } catch (e: Exception) {
+            Log.w(TAG, "recording: could not sweep interrupted walks", e)
+        }
 
         val ui = chosenUi()
         Log.i(TAG, "ui: $ui (available: ${available().joinToString(", ")})")
@@ -2624,6 +2766,7 @@ class MainActivity : Activity() {
             lastSnap = snap
             watchSlip(snap)
             ftms.update(snap)
+            recordTick(snap)
             // Through repaint() rather than push(), so the session stamped on
             // the frame is the one that is true at the moment it is handed to
             // the page. A press lands on a WebView thread and can arrive
@@ -2830,6 +2973,8 @@ class MainActivity : Activity() {
         }
 
         val elapsedNow = elapsedSec()
+        val lapLive = if (Session.isMoving(session) || session == Session.PAUSED)
+            laps.live(elapsedNow, sessionDistance) else null
         if (Session.isMoving(session)) {
             // A route is ground, not a timetable — see routeTick.
             if (route != null) routeTick(sessionDistance) else planTick(elapsedNow)
@@ -2906,6 +3051,12 @@ class MainActivity : Activity() {
             } else 0.0,
             inclineAuto = inclineAuto,
             boardLocked = boardLocked,
+            lap = lapLive?.index ?: 0,
+            lapElapsed = lapLive?.activeSec ?: 0.0,
+            lapDistance = lapLive?.distanceM ?: 0.0,
+            laps = if (session == Session.SUMMARY) laps.closed() else emptyList(),
+            lapFlash = if (SystemClock.elapsedRealtime() < lapFlashUntil) lapFlashIndex else 0,
+            dateUnknown = session == Session.SUMMARY && sessionStartWall() == 0L,
         )
     }
 

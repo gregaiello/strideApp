@@ -1,5 +1,7 @@
 package dev.stride.hud
 
+import java.util.Locale
+
 /**
  * Where the *app* thinks we are in a workout.
  *
@@ -187,6 +189,19 @@ data class Snapshot(
      *  one is "the board is not answering", the other is "the board wants us to
      *  authenticate and we are doing it". */
     val boardLocked: Boolean = false,
+    /** The lap in progress, 1-based; 0 while there is no workout to lap. */
+    val lap: Int = 0,
+    /** Active seconds in the current lap, paused time excluded. */
+    val lapElapsed: Double = 0.0,
+    val lapDistance: Double = 0.0,
+    /** Closed laps. Filled on the summary only, to keep the 5 Hz frame small. */
+    val laps: List<Lap> = emptyList(),
+    /** For a few seconds after a press, the lap it closed, so a mid-stride tap
+     *  can be seen to have landed; 0 otherwise. */
+    val lapFlash: Int = 0,
+    /** Summary only: the console clock was never trustworthy during this walk,
+     *  so whatever date its files carry is a guess. See sessionStartWall. */
+    val dateUnknown: Boolean = false,
 ) {
     val mode: String get() = Session.name(session)
 
@@ -239,31 +254,40 @@ data class Snapshot(
         }
     }
 
+    /**
+     * Numbers for the page, always with a decimal point.
+     *
+     * `"%.1f".format` follows the console's locale, and on one set to German
+     * or Italian that writes 9,0 — which is not JSON, so the page would get
+     * nothing it could parse and the HUD would stop updating.
+     */
+    private fun num(fmt: String, v: Double): String = String.format(Locale.US, fmt, v)
+
     fun toJson(): String = buildString {
         append("{")
-        append("\"speed\":${"%.1f".format(speed)},")
-        append("\"beltKph\":${"%.1f".format(beltKph)},")
-        append("\"rpm\":${"%.0f".format(rpm)},")
+        append("\"speed\":${num("%.1f", speed)},")
+        append("\"beltKph\":${num("%.1f", beltKph)},")
+        append("\"rpm\":${num("%.0f", rpm)},")
         append("\"slipping\":$slipping,")
-        append("\"incline\":${"%.1f".format(incline)},")
-        append("\"targetSpeed\":${"%.1f".format(targetSpeed)},")
-        append("\"targetIncline\":${"%.1f".format(targetIncline)},")
-        append("\"distance\":${"%.0f".format(distance)},")
-        append("\"elapsed\":${"%.0f".format(elapsed)},")
-        append("\"calories\":${"%.0f".format(calories)},")
+        append("\"incline\":${num("%.1f", incline)},")
+        append("\"targetSpeed\":${num("%.1f", targetSpeed)},")
+        append("\"targetIncline\":${num("%.1f", targetIncline)},")
+        append("\"distance\":${num("%.0f", distance)},")
+        append("\"elapsed\":${num("%.0f", elapsed)},")
+        append("\"calories\":${num("%.0f", calories)},")
         append("\"pulse\":$pulse,")
         append("\"fan\":$fan,")
         append("\"workout\":\"${esc(workout)}\",")
         append("\"dmk\":$dmk,")
         append("\"ramping\":\"${esc(ramping)}\",")
-        append("\"phaseLeft\":${"%.0f".format(phaseLeft)},")
+        append("\"phaseLeft\":${num("%.0f", phaseLeft)},")
         append("\"boardMode\":$boardMode,")
         append("\"boardOk\":$boardOk,")
         append("\"boardLocked\":$boardLocked,")
-        append("\"avgSpeed\":${"%.1f".format(avgSpeed)},")
-        append("\"maxSpeed\":${"%.1f".format(maxSpeed)},")
-        append("\"avgIncline\":${"%.1f".format(avgIncline)},")
-        append("\"maxIncline\":${"%.1f".format(maxIncline)},")
+        append("\"avgSpeed\":${num("%.1f", avgSpeed)},")
+        append("\"maxSpeed\":${num("%.1f", maxSpeed)},")
+        append("\"avgIncline\":${num("%.1f", avgIncline)},")
+        append("\"maxIncline\":${num("%.1f", maxIncline)},")
         append("\"avgPulse\":$avgPulse,")
         append("\"maxPulse\":$maxPulse,")
         append("\"hrMax\":$hrMax,")
@@ -277,19 +301,29 @@ data class Snapshot(
         append("\"segment\":$segment,")
         append("\"segments\":$segments,")
         append("\"segmentLabel\":\"${esc(segmentLabel)}\",")
-        append("\"segmentLeft\":${"%.0f".format(segmentLeft)},")
+        append("\"segmentLeft\":${num("%.0f", segmentLeft)},")
         append("\"segmentLeftIsDistance\":$segmentLeftIsDistance,")
         append("\"nextLabel\":\"${esc(nextLabel)}\",")
-        append("\"nextIncline\":${"%.1f".format(nextIncline)},")
-        append("\"planTotalSec\":${"%.0f".format(planTotalSec)},")
-        append("\"planClimbM\":${"%.0f".format(planClimbM)},")
-        append("\"planPeakIncline\":${"%.1f".format(planPeakIncline)},")
+        append("\"nextIncline\":${num("%.1f", nextIncline)},")
+        append("\"planTotalSec\":${num("%.0f", planTotalSec)},")
+        append("\"planClimbM\":${num("%.0f", planClimbM)},")
+        append("\"planPeakIncline\":${num("%.1f", planPeakIncline)},")
         append("\"summaryLine\":\"${esc(summaryLine)}\",")
-        append("\"planElapsed\":${"%.0f".format(planElapsed)},")
+        append("\"planElapsed\":${num("%.0f", planElapsed)},")
         append("\"planLap\":$planLap,")
         append("\"planLoops\":$planLoops,")
-        append("\"suggestPace\":${"%.1f".format(suggestPace)},")
+        append("\"suggestPace\":${num("%.1f", suggestPace)},")
         append("\"inclineAuto\":$inclineAuto,")
+        append("\"lap\":$lap,")
+        append("\"lapElapsed\":${num("%.0f", lapElapsed)},")
+        append("\"lapDistance\":${num("%.0f", lapDistance)},")
+        append("\"lapFlash\":$lapFlash,")
+        append("\"dateUnknown\":$dateUnknown,")
+        append("\"laps\":${laps.joinToString(",", "[", "]") {
+            "{\"i\":${it.index},\"sec\":${num("%.0f", it.activeSec)}," +
+                "\"m\":${num("%.0f", it.distanceM)},\"hr\":${it.avgHr}," +
+                "\"up\":${num("%.0f", it.ascentM)}}"
+        }},")
         append("\"mode\":\"$mode\"")
         append("}")
     }
