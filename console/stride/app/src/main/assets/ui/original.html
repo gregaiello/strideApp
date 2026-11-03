@@ -168,6 +168,14 @@ body::before{
 }
 .metric .v{font-size:42px;font-weight:300;font-variant-numeric:tabular-nums}
 .metric .v small{font-size:17px;color:var(--ink-dim);margin-left:4px}
+/* The lap readout. Hidden outside a workout; for three seconds after a press
+   it lights up and names the lap that just closed, so a tap made mid-stride
+   is visibly a tap that landed. */
+.metric.lapm{display:none}
+.metric.lapm.on{display:flex}
+.metric.lapm .k{transition:color .2s}
+.metric.lapm.flash .k{color:var(--good)}
+.metric.lapm.flash .v{color:var(--good)}
 
 /* ---- controls ----------------------------------------------------------- */
 /* Held clear of the panel edge: touches within ~15px of the bezel register
@@ -275,6 +283,19 @@ button.pulse{animation:pulse .9s ease-out 2}
 .card .v{margin-top:12px;font-size:40px;font-weight:300;font-variant-numeric:tabular-nums}
 .card .v small{font-size:15px;color:var(--ink-dim);margin-left:3px}
 .summary .done{margin-top:52px}
+/* Laps take room the summary otherwise spends on air, so with a table the
+   gaps close up rather than the table being pushed off the bottom. */
+.summary.haslaps .cards{margin-top:30px}
+.summary.haslaps .done{margin-top:26px}
+.sumdate{margin-top:10px;font-size:15px;color:var(--accent-warm);letter-spacing:.06em}
+.laptable{display:none;margin-top:24px;max-height:176px;overflow-y:auto;
+  border:2px solid var(--track-line);border-radius:20px;padding:6px 18px}
+.summary.haslaps .laptable{display:block}
+.laptable table{border-collapse:collapse;font-variant-numeric:tabular-nums}
+.laptable th{font-size:11px;font-weight:400;letter-spacing:.2em;text-transform:uppercase;
+  color:var(--ink-faint);padding:6px 22px;text-align:right}
+.laptable td{font-size:20px;font-weight:300;padding:4px 22px;text-align:right}
+.laptable td:first-child,.laptable th:first-child{text-align:left;color:var(--ink-dim)}
 .summary .done button{width:280px;max-width:none;height:88px;font-size:19px}
 
 /* ---- coach ribbon -------------------------------------------------------
@@ -566,10 +587,12 @@ button.pulse{animation:pulse .9s ease-out 2}
     <div class="metric"><div class="k">Distance</div><div class="v"><span id="distance">0</span><small>m</small></div></div>
     <div class="metric"><div class="k">Calories</div><div class="v"><span id="calories">0</span><small>kcal</small></div></div>
     <div class="metric"><div class="k">Heart rate</div><div class="v"><span id="pulse">—</span><small>bpm</small></div></div>
+    <div class="metric lapm" id="lapMetric"><div class="k" id="lapK">Lap 1</div><div class="v"><span id="lapTime">0:00</span><small id="lapPace"></small></div></div>
   </div>
 
   <div class="controls">
     <button class="primary" id="btnStart">START</button>
+    <button id="btnLap">LAP</button>
     <button id="btnSpeedDown">SPEED −</button>
     <button id="btnSpeedUp">SPEED +</button>
     <button id="btnInclineDown">INCLINE −</button>
@@ -595,6 +618,7 @@ button.pulse{animation:pulse .9s ease-out 2}
          COMPLETE" is one thought and the coach's sentence is another; splitting
          the first with the second read as though the walk had been interrupted. -->
     <div class="sub" id="sumSub">walk complete</div>
+    <div class="sumdate" id="sumDate" hidden>Date unknown: the console clock was not set during this workout.</div>
     <div class="sumcoach" id="sumCoach"></div>
     <div class="cards">
       <div class="card"><div class="k">Time</div><div class="v" id="sumTime">0:00</div></div>
@@ -604,6 +628,10 @@ button.pulse{animation:pulse .9s ease-out 2}
       <div class="card"><div class="k">Max speed</div><div class="v"><span id="sumMax">0.0</span><small>km/h</small></div></div>
       <div class="card"><div class="k">Avg incline</div><div class="v"><span id="sumInc">0.0</span><small>%</small></div></div>
     </div>
+    <div class="laptable"><table>
+      <thead><tr><th>Lap</th><th>Time</th><th>Distance</th><th>Pace</th><th>Avg HR</th><th>Climb</th></tr></thead>
+      <tbody id="lapRows"></tbody>
+    </table></div>
     <div class="done"><button class="primary" id="btnDone">DONE</button></div>
   </div>
 </div>
@@ -975,6 +1003,10 @@ stepper($('btnInclineDown'),d => Stride.incline(-d),0.5, 0.5);
 /* Fan: a slide-out with the actual levels, rather than cycling blind. */
 let fanTimer = null;
 function closeFan(){ $('fanmenu').classList.remove('show'); clearTimeout(fanTimer); }
+// A mark, not a control: Kotlin ignores it unless the belt is live and the key
+// is in, and it changes nothing but the lap count.
+tap($('btnLap'), () => Stride.lap());
+
 tap($('btnFan'), () => {
   const menu = $('fanmenu');
   if (menu.classList.contains('show')) { closeFan(); return; }
@@ -1570,6 +1602,8 @@ window.render = function(s){
   $('btnStop').classList.toggle('muted', mode === 'cooldown');
   $('btnSpeedUp').classList.toggle('muted', !moving);
   $('btnSpeedDown').classList.toggle('muted', !moving);
+  $('btnLap').classList.toggle('muted', !moving);
+  renderLap(s);
 
   // Neither hero makes sense during the timed phases — those get the panel.
   const timed = (mode === 'warmup' || mode === 'cooldown');
@@ -1671,6 +1705,32 @@ window.render = function(s){
   }
 };
 
+/** Pace as m:ss per km, or a dash while the lap is too short to have one. */
+function paceLabel(sec, m){
+  const p = STRIDE.lapPace(sec, m);
+  return p ? mmss(p) + ' /km' : '—';
+}
+
+function renderLap(s){
+  const el = $('lapMetric');
+  el.classList.toggle('on', !!s.lap);
+  if (!s.lap) return;
+  const flash = s.lapFlash || 0;
+  el.classList.toggle('flash', flash > 0);
+  $('lapK').textContent = flash
+    ? 'Lap ' + flash + ' done'
+    : 'Lap ' + s.lap + ' · ' + nf(s.lapDistance || 0) + ' m';
+  $('lapTime').textContent = mmss(s.lapElapsed || 0);
+  $('lapPace').textContent = paceLabel(s.lapElapsed || 0, s.lapDistance || 0);
+}
+
+function renderLaps(laps){
+  $('lapRows').innerHTML = laps.map(l =>
+    '<tr><td>' + l.i + '</td><td>' + mmss(l.sec || 0) + '</td><td>' + nf(l.m || 0) + ' m</td>' +
+    '<td>' + paceLabel(l.sec || 0, l.m || 0) + '</td>' +
+    '<td>' + (l.hr ? l.hr : '—') + '</td><td>' + nf(l.up || 0) + ' m</td></tr>').join('');
+}
+
 function renderSummary(s){
   const kind = s.workout && s.workout !== 'none' ? s.workout : 'workout';
   /* The walker's own name, or none at all for a guest — better than
@@ -1684,6 +1744,10 @@ function renderSummary(s){
   $('sumAvg').textContent  = (s.avgSpeed ?? 0).toFixed(1);
   $('sumMax').textContent  = (s.maxSpeed ?? 0).toFixed(1);
   $('sumInc').textContent  = (s.avgIncline ?? 0).toFixed(1);
+  const laps = s.laps || [];
+  document.querySelector('#screenSummary .summary').classList.toggle('haslaps', laps.length > 0);
+  renderLaps(laps);
+  $('sumDate').hidden = !s.dateUnknown;
 }
 
 /* --- clock --------------------------------------------------------------- */

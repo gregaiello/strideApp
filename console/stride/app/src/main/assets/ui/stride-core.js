@@ -455,6 +455,20 @@ var lastDistance = 0;
 /** New walk, or the odometer went backwards: start the climb count again. */
 function resetDerived() { climbM = 0; lastDistance = 0; }
 
+/**
+ * Seconds per kilometre over a lap, or 0 when the lap is too short to say.
+ * Ten metres is a press and a stumble, not a pace.
+ */
+function lapPace(sec, m) {
+  return m >= 10 ? sec / (m / 1000) : 0;
+}
+
+function lapOf(l) {
+  return { n: l.i, sec: l.sec || 0, m: l.m || 0,
+           paceSecPerKm: lapPace(l.sec || 0, l.m || 0),
+           hr: l.hr || 0, up: l.up || 0 };
+}
+
 function adapt(raw) {
   raw = raw || {};
   var distance = raw.distance || 0;
@@ -573,6 +587,22 @@ function adapt(raw) {
        so, and the morning went into guessing at hardware. A UI that shows this
        turns that into a sentence anyone can read. */
     board:     raw.boardLocked ? 'locked' : (raw.boardOk === false ? 'quiet' : 'ok'),
+
+    /* Laps the walker marks with the LAP button, as on a sport watch. Not the
+       same thing as `session.laps`, which counts 400 m of track for the oval.
+
+       `lap` is the one in progress (null outside a workout); `flash` is the
+       number of the lap a press just closed, for three seconds, so a tap made
+       mid-stride can be seen to have landed. `laps` is filled on the summary
+       only. Paused time is never lap time — Kotlin leaves it out. */
+    lap:  raw.lap ? { n: raw.lap, sec: raw.lapElapsed || 0, m: raw.lapDistance || 0,
+                      paceSecPerKm: lapPace(raw.lapElapsed || 0, raw.lapDistance || 0),
+                      flash: raw.lapFlash || 0 } : null,
+    laps: (raw.laps || []).map(lapOf),
+
+    /* The console never had the right time during this walk, so its files
+       will carry a date that is a guess. Summary only. */
+    dateUnknown: !!raw.dateUnknown,
 
     /* Seconds left in a timed phase, and which ramp is in flight ("warmup",
        "resuming", "cooldown", "stopping" or ""). */
@@ -1150,7 +1180,8 @@ function fanLabel(n) { return n ? n + ' OF 4' : 'OFF'; }
 var BRIDGE = ['choose', 'chooseGuided', 'chooseRoute', 'skipWarmup', 'skipCooldown', 'pause',
               'setSpeed',
               'resume', 'end', 'home', 'speed', 'incline', 'fan', 'setFan',
-              'setWalker', 'ackDmk', 'hushCoach', 'dim', 'setUi', 'wakeBoard'];
+              'setWalker', 'ackDmk', 'hushCoach', 'dim', 'setUi', 'wakeBoard',
+              'lap'];
 
 /** @return true if this page is running without the console behind it. */
 function stub() {
@@ -1381,6 +1412,20 @@ function demo(opts) {
   var t = opts.elapsed == null ? 512 : opts.elapsed;   // mid-walk, mid-hill
   var dist = 720, cals = 78;
 
+  /* A pretend LAP button, so the lap readout and its flash can be designed
+     without a treadmill. The second lap opened ninety seconds ago. */
+  var lapN = 2, lapT = t - 90, lapD = dist - 135, flashUntil = 0, flashN = 0;
+  global.Stride.lap = function () {
+    if (t - lapT < 2) return;            // the same double-tap guard as Kotlin
+    flashN = lapN; flashUntil = Date.now() + 3000;
+    lapN++; lapT = t; lapD = dist;
+    console.log('Stride.lap', flashN);
+  };
+  var DEMO_LAPS = [{ i: 1, sec: 300, m: 1000, hr: 128, up: 0 },
+                   { i: 2, sec: 255, m: 1000, hr: 151, up: 4 },
+                   { i: 3, sec: 120, m: 400, hr: 163, up: 24 },
+                   { i: 4, sec: 330, m: 1000, hr: 139, up: 0 }];
+
   function frame() {
     var phase = screen === 'live-casual' || screen === 'live-guided' ? 'running'
               : screen === 'welcome' ? 'welcome' : screen;
@@ -1408,6 +1453,11 @@ function demo(opts) {
       segmentLabel: guided ? step.label : '',
       segmentLeft: guided ? step.end - t : 0,
       suggestPace: guided ? 5.6 : 0, inclineAuto: true,
+      lap: moving || phase === 'paused' ? lapN : 0,
+      lapElapsed: t - lapT, lapDistance: dist - lapD,
+      lapFlash: Date.now() < flashUntil ? flashN : 0,
+      laps: phase === 'summary' ? DEMO_LAPS : [],
+      dateUnknown: phase === 'summary' && q.nodate === '1',
       mode: phase
     });
   }
@@ -1549,6 +1599,7 @@ global.STRIDE = {
   tappedLoop: tappedLoop,
   loopedClimb: loopedClimb,
   esc: esc,
+  lapPace: lapPace,
   profiles: profiles,
   allowGuest: allowGuest,
   DURATIONS: DURATIONS,
