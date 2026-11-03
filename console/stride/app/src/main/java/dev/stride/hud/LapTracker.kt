@@ -74,13 +74,19 @@ class LapTracker {
         open(tMs, activeSec)
     }
 
-    @Synchronized fun sample(tMs: Long, activeSec: Double, distanceM: Double, hr: Int, altitudeM: Double) {
+    /**
+     * @param moving false while paused: the seconds still pass through so the
+     *               distance and altitude stay in step, but a resting pulse is
+     *               not counted as effort in a lap whose time leaves the pause out.
+     */
+    @Synchronized fun sample(tMs: Long, activeSec: Double, distanceM: Double, hr: Int, altitudeM: Double,
+                             moving: Boolean = true) {
         if (!started) return
         step(distanceM)
         val dAlt = altitudeM - lastAltitude
         if (dAlt > 0) ascent += dAlt else descent -= dAlt
         lastAltitude = altitudeM
-        if (hr > 0) { hrSum += hr; hrN++ }
+        if (hr > 0 && moving) { hrSum += hr; hrN++ }
     }
 
     /** @return the lap just closed, or null if the press was ignored. */

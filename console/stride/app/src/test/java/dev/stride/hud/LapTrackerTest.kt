@@ -89,4 +89,13 @@ class LapTrackerTest {
         assertEquals(2, t.closed().size)
         assertNull(t.finish(95_000, 95.0, 380.0))
     }
+
+    /** Paused time is not lap time, so a paused heart rate is not lap effort. */
+    @Test fun avgHrIgnoresPausedSamples() {
+        val t = started()
+        t.sample(1000, 1.0, 3.0, 160, 0.0, moving = true)
+        t.sample(2000, 1.0, 3.0, 100, 0.0, moving = false)
+        t.sample(3000, 2.0, 6.0, 170, 0.0, moving = true)
+        assertEquals(165, t.mark(3_000, 2.0, 6.0)!!.avgHr)
+    }
 }

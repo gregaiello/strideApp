@@ -790,6 +790,8 @@ class MainActivity : Activity() {
      *  between workouts, and after a write fails. */
     @Volatile private var recording: Recording? = null
     @Volatile private var lastSampleMs = -1L
+    /** The recording's distance, forward-only across odometer resets. */
+    @Volatile private var recordedDistance = Odometer()
     @Volatile private var lapFlashIndex = 0
     @Volatile private var lapFlashUntil = 0L
     private val recordingsDir by lazy { File(filesDir, "recordings").apply { mkdirs() } }
@@ -2258,6 +2260,7 @@ class MainActivity : Activity() {
         recording?.let { r -> writeRecording { r.finish("interrupted", 0L) } }
         recording = null
         laps.start(0L, 0.0, 0.0, 0.0)
+        recordedDistance = Odometer()
         lastSampleMs = -1L
         lapFlashUntil = 0L
         if (walker.isBlank()) return
@@ -2280,10 +2283,12 @@ class MainActivity : Activity() {
         val t = sessionMs()
         if (lastSampleMs >= 0L && t - lastSampleMs < SAMPLE_MS) return
         lastSampleMs = t
-        laps.sample(t, snap.elapsed, snap.distance, snap.pulse, climbM)
+        val moving = Session.isMoving(session)
+        val d = recordedDistance.update(snap.distance)
+        laps.sample(t, snap.elapsed, snap.distance, snap.pulse, climbM, moving)
         writeRecording {
-            it.sample(Sample(t, snap.elapsed, snap.distance, snap.speed, snap.incline,
-                             climbM, snap.pulse, Session.isMoving(session)))
+            it.sample(Sample(t, snap.elapsed, d, snap.speed, snap.incline,
+                             climbM, snap.pulse, moving))
         }
     }
 
@@ -2294,8 +2299,11 @@ class MainActivity : Activity() {
             ?.let { last -> writeRecording { it.lap(last) } }
         val r = recording ?: return
         recording = null
+        // Forward-only: a board that reset its odometer late in a long walk
+        // must not get that walk deleted as "too short".
+        val walked = maxOf(sessionDistance, recordedDistance.update(sessionDistance))
         try {
-            if (sessionDistance < History.MIN_DISTANCE_M ||
+            if (walked < History.MIN_DISTANCE_M ||
                 accumulatedMs / 1000.0 < History.MIN_ELAPSED_S) {
                 r.discard()
                 Log.i(TAG, "recording: walk too short, discarded")
@@ -3605,6 +3613,10 @@ class MainActivity : Activity() {
     }
 
     override fun onDestroy() {
+        // Closed here while the corrected start is still known. Left to the
+        // next start-up sweep, the file would lose it and keep only the raw,
+        // possibly 2010, date.
+        abandonRecording()
         running = false
         ftms.stop()
         voice.close()
