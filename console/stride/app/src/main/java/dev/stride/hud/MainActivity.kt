@@ -2308,11 +2308,36 @@ class MainActivity : Activity() {
                 r.discard()
                 Log.i(TAG, "recording: walk too short, discarded")
             } else {
-                r.finish("done", sessionStartWall())
+                r.finish("done", sessionStartWall(), sessionCalories)
                 Log.i(TAG, "recording: saved ${r.file.name}")
+                exportFit(r.file)
             }
         } catch (e: Exception) {
             Log.w(TAG, "recording: could not close", e)
+        }
+    }
+
+    /**
+     * Strava files go where `adb pull` can reach them on a release build,
+     * which is not debuggable, so the app's private files are out of reach.
+     */
+    private val fitDir by lazy { getExternalFilesDir("fit") ?: File(filesDir, "fit") }
+
+    /** The identity the file claims; see FitIdentity. */
+    private fun fitIdentity(): FitIdentity = FitIdentity.GENERIC
+
+    /**
+     * Off the poll thread: a long walk is thousands of messages and a file
+     * write, and the belt is read every 200 ms. A failure is logged and
+     * the recording kept, so the file can be made again later.
+     */
+    private fun exportFit(rec: File) {
+        thread(name = "fit-export") {
+            try {
+                FitExport.export(rec, fitDir, fitIdentity())?.let { Log.i(TAG, "fit: wrote ${it.name}") }
+            } catch (e: Exception) {
+                Log.w(TAG, "fit: export failed for ${rec.name}", e)
+            }
         }
     }
 
@@ -2321,7 +2346,12 @@ class MainActivity : Activity() {
         val r = recording
         recording = null
         if (r != null) {
-            try { r.finish("interrupted", sessionStartWall()) } catch (e: Exception) {
+            try {
+                r.finish("interrupted", sessionStartWall(), sessionCalories)
+                // A long walk left without a summary is still a walk; the
+                // export's own bar keeps a false start from becoming a file.
+                exportFit(r.file)
+            } catch (e: Exception) {
                 Log.w(TAG, "recording: could not close", e)
             }
         }
@@ -2374,6 +2404,7 @@ class MainActivity : Activity() {
         try {
             val closed = Recording.closeOrphans(recordingsDir)
             if (closed.isNotEmpty()) Log.i(TAG, "recording: closed ${closed.size} interrupted walk(s)")
+            closed.forEach(::exportFit)
         } catch (e: Exception) {
             Log.w(TAG, "recording: could not sweep interrupted walks", e)
         }
