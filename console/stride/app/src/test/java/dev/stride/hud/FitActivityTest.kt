@@ -94,8 +94,8 @@ class FitActivityTest {
 
     @Test fun identityIsWritten() {
         val s = walk(200)
-        val baro = msgs(rec(s, emptyList()), FitIdentity(1, 3906)).first { it.first == 0 }.second
-        assertEquals(1L, baro[1]); assertEquals(3906L, baro[2])
+        val other = msgs(rec(s, emptyList()), FitIdentity(123, 456)).first { it.first == 0 }.second
+        assertEquals(123L, other[1]); assertEquals(456L, other[2])
         val plain = msgs(rec(s, emptyList())).first { it.first == 0 }.second
         assertEquals(255L, plain[1]); assertEquals(0L, plain[2])
     }

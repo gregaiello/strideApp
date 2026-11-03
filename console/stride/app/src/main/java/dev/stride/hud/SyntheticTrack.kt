@@ -3,16 +3,15 @@ package dev.stride.hud
 /**
  * A made-up GPS track for a walk that went nowhere.
  *
- * Strava treats an activity without positions as an indoor one and ignores
- * the file's altitude, so the treadmill's climb would vanish. Giving it a
- * track fixes that, the same trick Zwift uses. The track is our own circle,
+ * Strava treats an activity without positions as an indoor one and shows no
+ * elevation for it at all. Giving it a track makes it an outdoor run with an
+ * elevation profile, the same trick Zwift uses. The track is our own circle,
  * not Zwift's roads, and it sits in the patch of ocean off the Solomon
  * Islands where Zwift's Watopia lives: athletes already know points there
  * mean "indoors", and nobody's real run lands on top of it.
  *
- * Tested on Strava (2026-11-03): a 400 m circle here, with a barometric
- * watch's identity, kept the file's 60 m of climb and drew the circle on the
- * map.
+ * Tested on Strava (2026-11-03): a 400 m circle here was drawn on the map,
+ * and the activity was treated as an outdoor run.
  *
  * Position advances by distance walked, so pace on the map matches the belt.
  */

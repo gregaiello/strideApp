@@ -10,7 +10,7 @@ import java.util.TimeZone
  */
 data class FitIdentity(val manufacturer: Int, val product: Int) {
     companion object {
-        /** FIT's "development" manufacturer: honest, and Strava recomputes the elevation. */
+        /** FIT's "development" manufacturer, for a file no watch made. */
         val GENERIC = FitIdentity(255, 0)
     }
 }
