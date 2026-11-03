@@ -388,6 +388,35 @@ button{font-family:inherit;color:inherit;background:none;border:none;
           font-size:112px;font-weight:100;color:#241f1a;font-variant-numeric:tabular-nums}
 .sleep .w{position:absolute;left:0;top:452px;width:1280px;text-align:center;
           font-size:17px;letter-spacing:.3em;text-transform:uppercase;color:#1a1613}
+
+/* ---- laps --------------------------------------------------------------
+   The LAP key is a mark, not a control (see LapTracker.kt). The lap cell joins
+   the telemetry row only during a workout, and for three seconds after a press
+   it lights up and names the lap just closed, so a mid-stride tap is visibly a
+   tap that landed. */
+.tele .lapc.flash .k,.tele .lapc.flash .v{color:var(--accent)}
+/* Ember's cells are the narrowest, so the pace gets its own line under the
+   time rather than wrapping wherever it happens to break. */
+.tele .lapc .v .u{display:block;margin-left:0;margin-top:4px;font-size:18px}
+/* Every summary here already spends its whole panel, so the laps get a sheet of
+   their own, opened from a corner pill, rather than covering what is there. */
+.sumdate{position:absolute;left:0;top:770px;width:1280px;text-align:center;
+  font-size:14px;letter-spacing:.06em;color:var(--accent)}
+.lapspill{position:absolute;right:44px;top:70px;height:56px;padding:0 26px;
+  background:transparent;color:var(--accent);border:1px solid var(--accent);border-radius:28px;
+  font:inherit;font-size:14px;letter-spacing:.2em;touch-action:manipulation}
+.lapsheet{position:absolute;left:0;top:0;width:1280px;height:800px;z-index:50;
+  background:var(--bg);display:flex;flex-direction:column;align-items:center;justify-content:center}
+.lapsheet[hidden]{display:none}
+.lapsheet .lk{font-size:14px;letter-spacing:.3em;color:var(--dim);margin-bottom:22px}
+.lapsheet .lhint{margin-top:22px;font-size:12px;letter-spacing:.2em;color:var(--dim)}
+.laptable{max-height:560px;overflow-y:auto;padding:6px 20px;
+  border:1px solid var(--line, var(--hair, var(--rule)));border-radius:12px}
+.laptable table{border-collapse:collapse;font-variant-numeric:tabular-nums}
+.laptable th{font-size:12px;font-weight:400;letter-spacing:.2em;color:var(--dim);
+  padding:8px 26px;text-align:right}
+.laptable td{font-size:26px;color:var(--ink);padding:6px 26px;text-align:right}
+.laptable th:first-child,.laptable td:first-child{text-align:left;color:var(--dim)}
 </style>
 </head>
 <body>
@@ -514,10 +543,12 @@ button{font-family:inherit;color:inherit;background:none;border:none;
     <div class="cell"><div class="k">Climbed</div><div class="v"><span id="climb">0</span><span class="u"> m</span></div></div>
     <div class="cell"><div class="k">Calories</div><div class="v" id="cals">0</div></div>
     <div class="cell hr" id="hrCell"><div class="k">Heart rate</div><div class="none" id="pulse">no reading</div></div>
+    <div class="cell lapc" id="lapCell" style="display:none"><div class="k" id="lapK">Lap 1</div><div class="v"><span id="lapTime">0:00</span><span class="u" id="lapPace"></span></div></div>
   </div>
 
   <div class="controls">
     <button class="key lead" id="btnLead"><span class="lab" id="leadLab">PAUSE</span></button>
+    <button class="key" id="btnLap"><span class="lab">LAP</span></button>
     <button class="key" id="btnSpeedDown"><span class="sym">&minus;</span><span class="sub">SPEED</span></button>
     <button class="key" id="btnSpeedUp"><span class="sym">+</span><span class="sub">SPEED</span></button>
     <button class="key" id="btnInclineDown"><span class="sym">&minus;</span><span class="sub">INCLINE</span></button>
@@ -541,6 +572,9 @@ button{font-family:inherit;color:inherit;background:none;border:none;
 <!-- ===================== 11 · SUMMARY ================================== -->
 <div class="screen sum" id="scSummary">
   <div class="h" id="sumHead">Nice work</div>
+  <div class="sumdate" id="sumDate" hidden>Date unknown: the console clock was not set during this workout.</div>
+  <button class="lapspill" id="lapsPill" hidden>LAPS</button>
+  <div class="lapsheet" id="lapSheet" hidden><div class="lk">Laps</div><div class="laptable"><table><thead><tr><th>Lap</th><th>Time</th><th>Distance</th><th>Pace</th><th>Avg HR</th><th>Climb</th></tr></thead><tbody id="lapRows"></tbody></table></div><div class="lhint">Tap anywhere to close</div></div>
   <div class="sumcoach" id="sumCoach"></div>
   <div class="k" id="sumKind">&mdash;</div>
   <div class="grid">
@@ -836,6 +870,10 @@ tap($('btnStop'), () => {
 tap($('btnResume'), () => { $('paused').classList.remove('on'); Stride.resume(); });
 tap($('btnEnd'),    () => { $('paused').classList.remove('on'); Stride.end(); });
 tap($('btnDone'),   () => Stride.home());
+// Kotlin ignores it unless the belt is live and the key is in.
+tap($('btnLap'), () => Stride.lap());
+tap($('lapsPill'), () => { $('lapSheet').hidden = false; });
+tap($('lapSheet'), () => { $('lapSheet').hidden = true; });
 tap($('btnFan'),    () => Stride.fan());
 
 STRIDE.stepper($('btnSpeedUp'),     d => Stride.speed(d),    0.1, 0.5);
@@ -1006,6 +1044,8 @@ window.render = function(raw){
   const moving = s.phase === 'active' || timed;
   $('btnSpeedUp').classList.toggle('mute', !moving);
   $('btnSpeedDown').classList.toggle('mute', !moving);
+  $('btnLap').classList.toggle('mute', !moving);
+  renderLapCell(s);
 
   /* The segment header is live plan state, so it is only up while the plan is
      actually running. During the warm-up it reads as a preview instead. */
@@ -1095,7 +1135,38 @@ function renderWarm(s){
     : 'Easing in. Skip whenever you’re ready.';
 }
 
+/** m:ss per km, or a dash while the lap is too short to have a pace. */
+function paceText(sec, m){
+  const p = STRIDE.lapPace(sec, m);
+  return p ? ' ' + mmss(p) + ' /km' : '';
+}
+
+function renderLapCell(s){
+  const cell = $('lapCell');
+  cell.style.display = s.lap ? '' : 'none';
+  if (!s.lap) return;
+  const flash = s.lap.flash;
+  cell.classList.toggle('flash', flash > 0);
+  $('lapK').textContent = flash ? 'Lap ' + flash + ' done'
+                                : 'Lap ' + s.lap.n + ' · ' + nf(s.lap.m) + ' m';
+  $('lapTime').textContent = mmss(s.lap.sec);
+  $('lapPace').textContent = paceText(s.lap.sec, s.lap.m);
+}
+
+function renderLapTable(s){
+  const n = s.laps.length;
+  $('lapsPill').hidden = !n;
+  $('lapsPill').textContent = n + (n === 1 ? ' LAP' : ' LAPS') + ' ›';
+  if (!n) $('lapSheet').hidden = true;
+  $('lapRows').innerHTML = s.laps.map(l =>
+    '<tr><td>' + l.n + '</td><td>' + mmss(l.sec) + '</td><td>' + nf(l.m) + ' m</td>' +
+    '<td>' + (l.paceSecPerKm ? mmss(l.paceSecPerKm) + ' /km' : '—') + '</td>' +
+    '<td>' + (l.hr || '—') + '</td><td>' + nf(l.up) + ' m</td></tr>').join('');
+  $('sumDate').hidden = !s.dateUnknown;
+}
+
 function renderSummary(s){
+  renderLapTable(s);
   $('sumHead').textContent  = 'Nice work, ' + (s.profile || 'you');
   $('sumCoach').textContent = s.summaryLine || '';
   $('sumKind').textContent  = s.plan.name
