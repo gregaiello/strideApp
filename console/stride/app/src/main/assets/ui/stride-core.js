@@ -1636,4 +1636,33 @@ global.STRIDE = {
   $: function (id) { return document.getElementById(id); }
 };
 
+/* ===========================================================================
+   FIT TO THE PANEL
+   ---------------------------------------------------------------------------
+   Every UI is drawn for 1280x800 in fixed pixels. Some consoles are not that
+   panel (the C 1750 is 1920x1080), and the WebView ignores the viewport meta,
+   so the page came up as a 1280x800 block in the top-left corner with the
+   full-screen layers stretched to the real window.
+
+   Stretch the body to fill the window, each axis on its own. Keeping the
+   proportions instead left a dark band down each side of a 16:9 panel, in a
+   colour that matched none of the five palettes, and on the console it read
+   as the page being cropped. Stretched, 16:10 on 16:9 is 11% wider than tall,
+   which is hard to see in practice. The transform also makes the body the
+   containing block for the absolute full-screen layers, so they stretch with
+   everything else instead of anchoring to the window.
+   =========================================================================== */
+var DESIGN_W = 1280, DESIGN_H = 800;
+function fitToPanel() {
+  var b = document.body;
+  if (!b) return;
+  var w = global.innerWidth, h = global.innerHeight;
+  if (w === DESIGN_W && h === DESIGN_H) { b.style.transform = ''; return; }
+  b.style.transformOrigin = '0 0';
+  b.style.transform = 'scale(' + (w / DESIGN_W) + ',' + (h / DESIGN_H) + ')';
+}
+if (document.body) fitToPanel();
+else document.addEventListener('DOMContentLoaded', fitToPanel);
+global.addEventListener('resize', fitToPanel);
+
 })(window);
