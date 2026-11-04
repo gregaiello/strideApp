@@ -4,6 +4,9 @@ homeassistant/stride.conf
 # Broker credentials injected into the console build, and the Android SDK
 # path, which is a home directory and differs per machine.
 console/*/local.properties
+# The console snapshot tools/unchain.sh takes before it changes anything:
+# package list, settings and network state of one specific treadmill.
+tools/device-state.txt
 
 # The release signing key. It belongs outside the repo entirely — see the
 # keytool line in console/stride/app/build.gradle.kts — but a key committed

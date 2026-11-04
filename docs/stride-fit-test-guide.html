@@ -1,0 +1,432 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>STRIDE on the treadmill: laps + .FIT test</title>
+<style>
+  :root { --ink:#1b1f24; --dim:#5b6470; --line:#dfe3e8; --bg:#f7f8fa; --card:#fff;
+          --accent:#0b6bcb; --ok:#1a7f37; --warn:#9a6700; --stop:#cf222e; }
+  * { box-sizing: border-box; }
+  body { margin:0; font:16px/1.55 -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+         color:var(--ink); background:var(--bg); }
+  main { max-width: 860px; margin: 0 auto; padding: 32px 20px 80px; }
+  h1 { font-size: 28px; margin: 0 0 6px; }
+  .sub { color: var(--dim); margin: 0 0 24px; }
+  .ipbox { position: sticky; top: 0; z-index: 5; background: var(--bg); padding: 12px 0;
+           border-bottom: 1px solid var(--line); margin-bottom: 20px; display:flex; gap:12px;
+           align-items:center; flex-wrap: wrap; }
+  .ipbox input { font: inherit; padding: 6px 10px; border:1px solid var(--line); border-radius:6px; width: 180px; }
+  .progress { color: var(--dim); font-size: 14px; margin-left: auto; }
+  section.step { background: var(--card); border: 1px solid var(--line); border-radius: 10px;
+                 padding: 18px 20px; margin: 14px 0; }
+  section.step.done { opacity: .55; }
+  section.step h2 { font-size: 19px; margin: 0 0 10px; display:flex; gap:10px; align-items:center; }
+  section.step h2 input { width: 20px; height: 20px; }
+  .n { display:inline-block; min-width: 30px; height: 30px; line-height: 30px; text-align:center;
+       border-radius: 15px; background: var(--accent); color:#fff; font-size: 15px; }
+  .where { font-size: 12px; letter-spacing: .08em; text-transform: uppercase; color: var(--dim);
+           border:1px solid var(--line); border-radius: 4px; padding: 1px 6px; margin-left: 4px; }
+  pre { position: relative; background: #0f1720; color: #e6edf3; padding: 12px 14px; border-radius: 8px;
+        overflow-x: auto; font: 14px/1.5 Consolas, "Cascadia Mono", Menlo, monospace; margin: 10px 0; }
+  pre button { position:absolute; top:6px; right:6px; font: 12px inherit; padding: 3px 8px;
+               border-radius: 5px; border: 1px solid #3b4652; background:#1c2733; color:#c9d4df; cursor:pointer; }
+  code { font-family: Consolas, Menlo, monospace; background: #eef1f4; padding: 1px 5px; border-radius: 4px; font-size: 14px; }
+  pre code { background: none; padding: 0; }
+  .ok   { border-left: 4px solid var(--ok);   background:#effaf1; padding: 8px 12px; border-radius: 6px; margin: 10px 0; }
+  .warn { border-left: 4px solid var(--warn); background:#fff8e6; padding: 8px 12px; border-radius: 6px; margin: 10px 0; }
+  .stop { border-left: 4px solid var(--stop); background:#fff0f0; padding: 8px 12px; border-radius: 6px; margin: 10px 0; }
+  ol, ul { padding-left: 22px; margin: 6px 0; }
+  li { margin: 3px 0; }
+  details { margin: 8px 0; }
+  summary { cursor: pointer; color: var(--accent); }
+  .phase { margin: 34px 0 6px; font-size: 13px; letter-spacing: .14em; text-transform: uppercase; color: var(--dim); }
+</style>
+</head>
+<body>
+<main>
+  <h1>STRIDE on the treadmill: laps + .FIT test</h1>
+  <p class="sub">From a factory-fresh console to a .fit on Strava. Build under test: your fork's
+    <code>main</code> (laps, per-second recording, .fit export, "Strava elevation" on).
+    Laptop commands are for <b>Windows PowerShell</b>. Tick each step off as you go; the ticks are
+    remembered in this browser.</p>
+
+  <div class="ipbox">
+    <label for="ip"><b>Console IP:</b></label>
+    <input id="ip" placeholder="e.g. 192.168.1.50" autocomplete="off">
+    <span style="color:var(--dim);font-size:14px">fills in the commands below (you read it in step 7)</span>
+    <span class="progress" id="progress"></span>
+  </div>
+
+  <div class="stop"><b>Safety first.</b> Clip the safety key to your clothing before the belt moves. To stop
+    anything at any time: pull the safety key. If in doubt: switch the treadmill off at its power switch.</div>
+
+  <div class="warn"><b>The factory reset is what makes this work.</b> Start from a freshly reset console
+    (step 3), not from whatever state the console is in today. The upstream README calls it out: the reset
+    <i>"has saved me more than once"</i>, and the install route was written for a just-reset machine. It is
+    also your undo button: if any step goes wrong or the console gets stuck, factory reset and start again
+    at step 3. Nothing you do here survives a reset, so it always gets you back to the original software.</div>
+
+  <!-- ================================================================= -->
+  <div class="phase">Part A · Before you go to the treadmill</div>
+
+  <section class="step" data-id="a1">
+    <h2><input type="checkbox"><span class="n">1</span> Laptop ready <span class="where">laptop</span></h2>
+    <ul>
+      <li>Laptop on the <b>same Wi-Fi</b> as the treadmill.</li>
+      <li>The repo is on the branch under test. In PowerShell:</li>
+    </ul>
+<pre><code>cd C:\path\to\strideApp
+git checkout main
+git pull
+git log --oneline -1</code></pre>
+    <div class="ok">✅ The last line starts with <code>640c4a3 Settings takes its colours from the UI it opens over</code>
+      (or something newer).</div>
+    <p>Set up the two shortcuts every later command uses (keep this PowerShell window open):</p>
+<pre><code>$adb = "$env:LOCALAPPDATA\Android\Sdk\platform-tools\adb.exe"
+$env:JAVA_HOME = 'C:\path\to\your\jdk'   # JDK 17 or newer
+&amp; $adb version</code></pre>
+    <div class="ok">✅ Prints <code>Android Debug Bridge version …</code></div>
+  </section>
+
+  <section class="step" data-id="a2">
+    <h2><input type="checkbox"><span class="n">2</span> Build the APK <span class="where">laptop</span></h2>
+<pre><code>cd C:\path\to\strideApp\console\stride
+.\gradlew.bat --console=plain :app:testDebugUnitTest assembleDebug</code></pre>
+    <div class="ok">✅ <code>BUILD SUCCESSFUL</code>. The APK is
+      <code>console\stride\app\build\outputs\apk\debug\app-debug.apk</code>.</div>
+    <div class="warn">This laptop has no signing key, so this is a <b>debug</b> build. That's fine for a test.
+      A debug build lets other apps on the console read STRIDE's stored settings (MQTT password included),
+      so don't leave it there for years. See <code>docs/INSTALL.md</code> 1.7.</div>
+  </section>
+
+  <!-- ================================================================= -->
+  <div class="phase">Part B · At the treadmill: factory reset, then from iFit to STRIDE</div>
+
+  <div class="warn"><b>Already have STRIDE on the console, no iFit?</b>
+    <details><summary>Use this short path instead of steps 3–11</summary>
+      <p>Only take this path if that install is healthy. If it has ever acted oddly (iFit coming back, STRIDE
+        not finding the board, a "which app?" prompt at boot), skip it and do the full path from the factory
+        reset in step 3.</p>
+      <ol>
+        <li>Switch on, read the IP (Android Settings → About tablet), type it in the box at the top.</li>
+        <li><code>&amp; $adb connect <span class="ipv">CONSOLE-IP</span>:5555</code>, then
+          <code>&amp; $adb devices</code> shows it as <code>device</code>.</li>
+        <li>From <code>console\stride</code>:
+          <code>&amp; $adb -s <span class="ipv">CONSOLE-IP</span>:5555 install -r app\build\outputs\apk\debug\app-debug.apk</code>.
+          If it fails with <code>INSTALL_FAILED_UPDATE_INCOMPATIBLE</code>, the installed STRIDE was signed with
+          another key (e.g. the GitHub release). Nothing has changed. The only way past it is
+          <code>&amp; $adb -s <span class="ipv">CONSOLE-IP</span>:5555 uninstall dev.stride.hud</code> and install
+          again, and <b>that wipes STRIDE's people, history and settings</b>. Your call.</li>
+        <li>Then continue at step 10.</li>
+      </ol>
+    </details>
+  </div>
+
+  <section class="step" data-id="b1-reset">
+    <h2><input type="checkbox"><span class="n">3</span> Factory reset the console <span class="where">treadmill</span></h2>
+    <p><b>Don't skip this.</b> Every later step assumes a just-reset console. Leftover iFit state (a half-run
+      earlier attempt, an update, iFit Admin's permissions) is the usual reason the later steps don't stick.</p>
+    <ol>
+      <li>Find the <b>pinhole reset button</b>: a single small hole on the side panel or the top of the console.</li>
+      <li>Push a paperclip into the pinhole and <b>hold it in while you switch the treadmill on</b> at the power
+        switch. The safety key isn't needed yet.</li>
+      <li>Let go when <i>System recovery</i> appears in blue text.</li>
+      <li>Let it finish. It takes <b>5–10 minutes</b>. Don't switch off during it.</li>
+      <li>The console boots into the <b>iFit</b> welcome screen, as it was out of the box.</li>
+    </ol>
+    <div class="ok">✅ The iFit welcome / first-run screen, and the console isn't on Wi-Fi.</div>
+    <div class="stop"><b>Don't join Wi-Fi.</b> The reset forgets the network, so leave it forgotten. Stay
+      offline until iFit is stopped in step 5, so it can't update itself or lock you out.<br>
+      <b>If iFit offers a software update, decline it.</b> An update (Gen 7 / iFit 2.0) is reported to close
+      the route used below.</div>
+    <div class="warn">If STRIDE was on the console before, the reset wipes it along with its people, history
+      and settings. Copy anything you want to keep off the console first.</div>
+    <details><summary>No <i>System recovery</i> screen, it just boots normally</summary>
+      <p>The pinhole wasn't held in early enough. Switch off, hold the pinhole in <b>before</b> you flip the
+        power switch, and keep holding until the blue text appears.</p></details>
+  </section>
+
+  <section class="step" data-id="b2">
+    <h2><input type="checkbox"><span class="n">4</span> Enter privileged mode <span class="where">treadmill</span></h2>
+    <p>On the iFit welcome screen:</p>
+    <ol>
+      <li>Tap a blank area of the screen <b>10 times</b>.</li>
+      <li>Wait <b>7 seconds</b>. Nothing appears during the pause.</li>
+      <li>Tap the same spot <b>10 more times</b>.</li>
+      <li>The console shows a <b>challenge code</b>. Get the matching <b>response code</b>: ring NordicTrack
+        support and ask for one, or use a third-party calculator such as getresponsecode.com (not connected to
+        STRIDE).</li>
+      <li>Enter the response code.</li>
+    </ol>
+    <div class="ok">✅ The console opens the plain Android apps screen. Tap <b>Settings</b>.</div>
+    <details><summary>Nothing happens after the taps</summary>
+      <p>Tap faster and in exactly the same spot, and make sure the pause really is about 7 seconds. Try a
+        different blank area if the first doesn't work. If the console joined Wi-Fi or took an update, factory
+        reset again (step 3) and stay offline this time.</p></details>
+  </section>
+
+  <section class="step" data-id="b3">
+    <h2><input type="checkbox"><span class="n">5</span> Stop iFit locking you out <span class="where">treadmill</span></h2>
+    <p>Do this before anything else. Skipping it undoes every later step at the next reboot.
+      In Android <b>Settings → Apps</b>:</p>
+    <p><b>iFit Admin</b> (<code>com.ifit.eru</code>). It's a system app and can't be uninstalled:</p>
+    <ol>
+      <li>Open it and tap <b>Force stop</b>.</li>
+      <li><b>Settings → Apps → Special access → Display over other apps</b>: set iFit Admin to <b>Not allowed</b>.</li>
+      <li><b>Settings → Apps → Special access → Modify system settings</b>: set iFit Admin to <b>off</b>.</li>
+    </ol>
+    <p><b>iFit</b> (<code>com.ifit.standalone</code>):</p>
+    <ol>
+      <li>Open it, tap <b>Force stop</b>, then <b>Uninstall</b>.</li>
+    </ol>
+    <div class="ok">✅ iFit is gone from the app list and iFit Admin shows as stopped.</div>
+  </section>
+
+  <section class="step" data-id="b4">
+    <h2><input type="checkbox"><span class="n">6</span> Turn on USB debugging <span class="where">treadmill</span></h2>
+    <ol>
+      <li><b>Settings → About tablet</b>: tap <b>Build number</b> 7 times. After about four taps it counts down,
+        and on the seventh it says Developer mode is on.</li>
+      <li><b>Settings → Developer options</b>: turn on <b>USB debugging</b>. Leave it on for good. It's also what
+        lets the laptop in over Wi-Fi.</li>
+    </ol>
+  </section>
+
+  <section class="step" data-id="b5">
+    <h2><input type="checkbox"><span class="n">7</span> Join Wi-Fi and read the IP <span class="where">treadmill</span></h2>
+    <ol>
+      <li>Pull down the notification panel, long-press <b>Wi-Fi</b>, and join the same network as the laptop.</li>
+      <li><b>Settings → About tablet → IP address</b>. Type it into the box at the top of this page.</li>
+    </ol>
+  </section>
+
+  <section class="step" data-id="b6">
+    <h2><input type="checkbox"><span class="n">8</span> Connect the laptop <span class="where">laptop</span></h2>
+    <p>In the PowerShell window from step 1:</p>
+<pre><code>&amp; $adb connect <span class="ipv">CONSOLE-IP</span>:5555
+&amp; $adb devices</code></pre>
+    <div class="ok">✅ Listed as <code><span class="ipv">CONSOLE-IP</span>:5555&nbsp;&nbsp;device</code>.</div>
+    <details open><summary>It says <code>unauthorized</code></summary>
+      <p>On the console's screen a dialog <i>"Allow USB debugging?"</i> is waiting. Tick <b>Always allow from
+        this computer</b>, tap <b>OK</b>, and run <code>&amp; $adb devices</code> again.</p></details>
+    <details><summary>It says <code>connection refused</code> or <code>failed to connect</code></summary>
+      <ul>
+        <li>Check the IP again, and that both are on the same network.</li>
+        <li>On the console, switch <b>USB debugging</b> off and on again, then retry.</li>
+        <li>Still refused: <code>&amp; $adb kill-server</code>, then <code>connect</code> again.</li>
+      </ul></details>
+  </section>
+
+  <section class="step" data-id="b7">
+    <h2><input type="checkbox"><span class="n">9</span> Run unchain: disable iFit for good, install STRIDE <span class="where">laptop · Git Bash</span></h2>
+    <p><code>tools/unchain.sh</code> does five things in order:</p>
+    <ol>
+      <li>disables iFit Admin, the part that re-locks the console at boot;</li>
+      <li>disables the iFit launcher;</li>
+      <li>keeps ADB and developer settings on;</li>
+      <li>installs the STRIDE you built in step 2 and launches it;</li>
+      <li>makes STRIDE the home app, so the console always comes back to it.</li>
+    </ol>
+    <p>It's a bash script, so run it in <b>Git Bash</b>, not PowerShell (Start → "Git Bash").
+      Your checkout has Windows line endings, which bash can't run, so these commands run a converted copy and
+      tidy up afterwards:</p>
+<pre><code>cd /c/path/to/strideApp
+export PATH="$PATH:$(cygpath "$LOCALAPPDATA")/Android/Sdk/platform-tools"
+sed 's/\r$//' tools/unchain.sh &gt; tools/unchain-lf.sh
+STRIDE_DEVICE=<span class="ipv">CONSOLE-IP</span>:5555 bash tools/unchain-lf.sh
+rm tools/unchain-lf.sh
+mv tools/device-state.txt ../device-state.txt</code></pre>
+    <div class="ok">✅ It ends with <code>&gt;&gt;&gt; DONE — eru disabled, STRIDE installed and set as home</code>,
+      and the console shows the <b>STRIDE welcome screen</b>.</div>
+    <div class="warn">Read what it prints. If it says it <i>could not pin ADB over Wi-Fi</i>, that's common and
+      usually harmless: Wi-Fi ADB comes back after a power cycle on most consoles. Step 12 checks yours.<br>
+      The last command moves <code>device-state.txt</code> (a snapshot of the console, for diagnosis) out of the
+      repo so it never ends up in a commit.</div>
+    <details><summary>It says <code>No STRIDE APK yet</code></summary>
+      <p>Step 2 didn't produce the APK. Build it (step 2), then run the commands again. Running it twice is safe.</p></details>
+    <details><summary>It says <code>INSTALL_FAILED_UPDATE_INCOMPATIBLE</code></summary>
+      <p>A STRIDE signed with another key is already on the console. See the box at the top of Part B.</p></details>
+  </section>
+
+  <section class="step" data-id="b8">
+    <h2><input type="checkbox"><span class="n">10</span> Watch the log <span class="where">laptop · PowerShell</span></h2>
+<pre><code>&amp; $adb -s <span class="ipv">CONSOLE-IP</span>:5555 logcat -c
+&amp; $adb -s <span class="ipv">CONSOLE-IP</span>:5555 logcat -s Stride:I</code></pre>
+    <div class="ok">✅ It prints <code>limits: … km/h, … %</code> once the board answers. This console should
+      report about <code>1.6..20.0 km/h, -3.0..12.0 %</code>. Leave the log running for the walk; it shows the
+      recording and the export happen.</div>
+    <details><summary>Nothing about <code>limits</code>, or STRIDE says it can't find the board</summary>
+      <p>iFit Admin may still be holding the motor board. Re-run step 9, then
+        <code>&amp; $adb -s <span class="ipv">CONSOLE-IP</span>:5555 shell am start -n dev.stride.hud/.MainActivity</code>.
+        Still nothing: factory reset (step 3) and go through Part B again.</p></details>
+  </section>
+
+  <section class="step" data-id="b9">
+    <h2><input type="checkbox"><span class="n">11</span> Set STRIDE up <span class="where">treadmill</span></h2>
+    <p>On a fresh install nobody exists yet. On the console, in STRIDE's settings (its gear icon):</p>
+    <ul>
+      <li><b>Who walks</b>: add yourself. Guests are never recorded, so you need to walk as a named person.</li>
+      <li><b>Treadmill → Saved walks → Strava elevation</b>: <b>on</b> (the default). This is what makes Strava
+        keep the climb.</li>
+      <li><b>Interface</b>: any of the five. <i>Original</i> is the most tested.</li>
+      <li>Home Assistant: optional; skip it for this test.</li>
+    </ul>
+  </section>
+
+  <section class="step" data-id="b10">
+    <h2><input type="checkbox"><span class="n">12</span> Check it survives a restart <span class="where">treadmill + laptop</span></h2>
+    <ol>
+      <li>Switch the treadmill off at the power switch, wait 10 seconds, switch it on.</li>
+      <li>✅ It boots straight into <b>STRIDE</b>, not iFit and not a "which app?" question.</li>
+      <li>In PowerShell, reconnect and restart the log:
+<pre><code>&amp; $adb connect <span class="ipv">CONSOLE-IP</span>:5555
+&amp; $adb -s <span class="ipv">CONSOLE-IP</span>:5555 logcat -c
+&amp; $adb -s <span class="ipv">CONSOLE-IP</span>:5555 logcat -s Stride:I</code></pre></li>
+    </ol>
+    <div class="ok">✅ It connects (the IP can change after a restart, so check it again if it doesn't). That
+      tells you Wi-Fi ADB comes back by itself on this console, which you'll want for every future update.</div>
+    <details><summary>iFit is back</summary>
+      <p>Factory reset (step 3) and go through Part B again, staying offline until step 5 is done. Make sure
+        step 9 runs to <code>DONE</code>. Patching it up from where it is (steps 4, 5, 9 only) can work, but a
+        clean reset is the reliable route.</p></details>
+    <details><summary>STRIDE came up, but the laptop can't connect</summary>
+      <p>On the console: Android Settings → Developer options, switch USB debugging off and on, then connect again.
+        STRIDE itself works fine without the laptop; this only matters for installing updates.</p></details>
+  </section>
+
+  <!-- ================================================================= -->
+  <div class="phase">Part C · The test walk</div>
+
+  <section class="step" data-id="c1">
+    <h2><input type="checkbox"><span class="n">13</span> Walk <span class="where">treadmill</span></h2>
+    <div class="stop">Clip the safety key on now.</div>
+    <ol>
+      <li>Choose yourself and a workout. Walk <b>at least 5 minutes</b>. Anything under 300 m or 3 minutes
+        is deliberately not saved.</li>
+      <li>Add <b>some incline</b> with the physical buttons, so there is a climb to check later.</li>
+      <li>Press <b>LAP</b> 2–3 times, a minute or more apart. Each press: the lap counter goes up, the lap time
+        and distance restart, and you briefly see <i>"Lap N done"</i>.</li>
+      <li><b>Pause</b> once for about 30 seconds, then resume.</li>
+      <li>If you have a heart-rate strap, wear it.</li>
+      <li>Press <b>END</b>.</li>
+    </ol>
+    <div class="ok">✅ On the summary: today's date, and an <b>"N LAPS ›"</b> pill (top right) that opens the lap
+      table (tap anywhere to close it). Write down the summary's <b>distance</b> and <b>climb</b>.</div>
+    <div class="ok">✅ In the log: <code>recording: saved …jsonl</code>, then within a few seconds
+      <code>fit: wrote 2026-11-04_HHMM_&lt;you&gt;.fit</code>.</div>
+    <details><summary>The log says <code>walk too short, discarded</code></summary>
+      <p>Under 300 m or 3 minutes of moving time. Walk again, longer.</p></details>
+    <details><summary>The log says <code>fit: export failed …</code></summary>
+      <p>Copy the whole message (it is followed by a stack trace) and include it in an issue. The walk itself is kept and
+        the export is tried again the next time STRIDE starts.</p></details>
+  </section>
+
+  <section class="step" data-id="c2">
+    <h2><input type="checkbox"><span class="n">14</span> Copy the .fit to the laptop <span class="where">laptop</span></h2>
+    <p>Stop the log with <b>Ctrl+C</b>, then:</p>
+<pre><code>&amp; $adb -s <span class="ipv">CONSOLE-IP</span>:5555 shell ls -l /sdcard/Android/data/dev.stride.hud/files/fit/
+mkdir $env:USERPROFILE\Documents\stride-fit -Force
+&amp; $adb -s <span class="ipv">CONSOLE-IP</span>:5555 pull /sdcard/Android/data/dev.stride.hud/files/fit/ $env:USERPROFILE\Documents\stride-fit\</code></pre>
+    <div class="ok">✅ A file named like <code>2026-11-04_0712_&lt;you&gt;.fit</code> is now in
+      <code>Documents\stride-fit\fit\</code> in your user folder.</div>
+  </section>
+
+  <section class="step" data-id="c3">
+    <h2><input type="checkbox"><span class="n">15</span> Upload to Strava and check <span class="where">browser</span></h2>
+    <ol>
+      <li>strava.com → <b>+</b> (top right) → <b>Upload activity</b> → <b>File</b> → pick the .fit.</li>
+    </ol>
+    <p>Check, against the numbers from step 13:</p>
+    <ul>
+      <li><b>Map</b>: a small circle in the sea off the Solomon Islands (Zwift's area).</li>
+      <li><b>Elevation gain</b>: close to the summary's climb, <i>not</i> hundreds of metres.</li>
+      <li><b>Distance</b>: matches the summary.</li>
+      <li><b>Moving time</b>: excludes the ~30 s pause. <b>Elapsed time</b>: includes it.</li>
+      <li><b>Laps</b>: your LAP presses appear as laps (Strava: the activity's <i>Laps</i> tab).</li>
+      <li><b>Heart rate</b>: a graph if you wore a strap; no graph at all (not a flat zero line) if you didn't.</li>
+      <li><b>Date and start time</b>: today, the time you started.</li>
+    </ul>
+    <div class="ok">✅ All match: the test passed. If anything didn't, please open an issue saying what you saw.</div>
+    <div class="warn">The Strava upload is a real activity on your profile. Delete it afterwards if you
+      don't want to keep it (activity → <b>…</b> → Delete).</div>
+  </section>
+
+  <!-- ================================================================= -->
+  <div class="phase">Part D · Optional: a walk cut off mid-way</div>
+
+  <section class="step" data-id="d1">
+    <h2><input type="checkbox"><span class="n">16</span> Kill the app during a walk <span class="where">laptop + treadmill</span></h2>
+    <ol>
+      <li>Start another walk as yourself; walk 4+ minutes.</li>
+      <li><b>While walking</b>, pull the safety key so the belt stops, then on the laptop:
+<pre><code>&amp; $adb -s <span class="ipv">CONSOLE-IP</span>:5555 shell am force-stop dev.stride.hud
+&amp; $adb -s <span class="ipv">CONSOLE-IP</span>:5555 logcat -c
+&amp; $adb -s <span class="ipv">CONSOLE-IP</span>:5555 shell am start -n dev.stride.hud/.MainActivity
+&amp; $adb -s <span class="ipv">CONSOLE-IP</span>:5555 logcat -s Stride:I</code></pre></li>
+    </ol>
+    <div class="ok">✅ Right after the start: <code>recording: closed 1 interrupted walk(s)</code>, then
+      <code>fit: wrote …</code>. Pull it as in step 14. Strava should show the walk up to the moment it was killed.</div>
+  </section>
+
+  <!-- ================================================================= -->
+  <div class="phase">Afterwards</div>
+
+  <section class="step" data-id="e1">
+    <h2><input type="checkbox"><span class="n">17</span> Leave the treadmill as you want it</h2>
+    <ul>
+      <li>Nothing to undo: the new STRIDE stays installed and keeps working without the laptop.</li>
+      <li>To go back to the original iFit software at any point: factory reset (step 3).</li>
+      <li>Disconnect: <code>&amp; $adb disconnect</code>.</li>
+      <li>Report back in an issue: what passed, what didn't, the Strava numbers, and any <code>fit:</code> or
+        <code>recording:</code> lines from the log.</li>
+    </ul>
+  </section>
+</main>
+
+<script>
+(function () {
+  var ipInput = document.getElementById('ip');
+  var saved = localStorage.getItem('stride-ip') || '';
+  ipInput.value = saved;
+  function fillIp() {
+    var v = ipInput.value.trim() || 'CONSOLE-IP';
+    [].forEach.call(document.querySelectorAll('.ipv'), function (s) { s.textContent = v; });
+    localStorage.setItem('stride-ip', ipInput.value.trim());
+  }
+  ipInput.addEventListener('input', fillIp);
+  fillIp();
+
+  var steps = document.querySelectorAll('section.step');
+  function progress() {
+    var done = document.querySelectorAll('section.step.done').length;
+    document.getElementById('progress').textContent = done + ' / ' + steps.length + ' steps done';
+  }
+  [].forEach.call(steps, function (s) {
+    var box = s.querySelector('h2 input');
+    var key = 'stride-step-' + s.getAttribute('data-id');
+    box.checked = localStorage.getItem(key) === '1';
+    s.classList.toggle('done', box.checked);
+    box.addEventListener('change', function () {
+      localStorage.setItem(key, box.checked ? '1' : '0');
+      s.classList.toggle('done', box.checked);
+      progress();
+    });
+  });
+  progress();
+
+  [].forEach.call(document.querySelectorAll('pre'), function (pre) {
+    var b = document.createElement('button');
+    b.textContent = 'Copy';
+    b.addEventListener('click', function () {
+      var text = pre.querySelector('code').innerText;
+      navigator.clipboard.writeText(text).then(function () {
+        b.textContent = 'Copied'; setTimeout(function () { b.textContent = 'Copy'; }, 1200);
+      });
+    });
+    pre.appendChild(b);
+  });
+})();
+</script>
+</body>
+</html>
