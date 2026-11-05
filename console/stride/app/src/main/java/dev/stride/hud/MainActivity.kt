@@ -475,6 +475,9 @@ class MainActivity : Activity() {
     private val coach = Coach()
 
     @Volatile private var running = false
+    /** Kept so [onDestroy] can wait for the loop to let go of USB before it
+     *  sends the last stop itself. Two threads on one endpoint mix frames. */
+    private var pollThread: Thread? = null
     @Volatile private var deviceId: Byte = FitPro.Dev.TREADMILL
     @Volatile private var targetKph = 0.0
     @Volatile private var targetGrade = 0.0
@@ -1945,10 +1948,62 @@ class MainActivity : Activity() {
             Log.w(TAG, "belt still moving at ${"%.1f".format(actualKph)} km/h " +
                     "outside a workout — commanding stop again (attempt $stopNags)")
         }
-        return mapOf(
-            FitPro.Field.KPH to 0.0,
-            FitPro.Field.WORKOUT_MODE to FitPro.Mode.PAUSE.toDouble(),
-        )
+        return stopFrame(stopNags)
+    }
+
+    /**
+     * The stop, worded two ways, taking turns.
+     *
+     * {KPH 0, PAUSE} together is how this has always stopped the belt, and on
+     * the C 1750 it lands. The X22i (board 0x02, 1.0 to 22.0 km/h) refuses
+     * it: zero is below the speed the board reports as its minimum, and the
+     * board rejects the whole frame when one field is bad, so the PAUSE riding
+     * along is refused with it. On 5 November 2026 STRIDE was closed from
+     * Recents mid-walk, came back as the home screen, saw the belt at 2.7 km/h
+     * and sent that frame at 5 Hz for 85 seconds, every one `status:failed`,
+     * while the belt kept going. PAUSE alone is what the console's own STOP
+     * key does (WorkoutMode 2 -> 3) and the board takes it. Sending it on its
+     * own first and the old frame on the next attempt stops both machines
+     * without having to know which one this is.
+     */
+    private fun stopFrame(attempt: Int): Map<FitPro.Field, Double> =
+        if (attempt % 2 == 1) {
+            mapOf(FitPro.Field.WORKOUT_MODE to FitPro.Mode.PAUSE.toDouble())
+        } else {
+            mapOf(
+                FitPro.Field.KPH to 0.0,
+                FitPro.Field.WORKOUT_MODE to FitPro.Mode.PAUSE.toDouble(),
+            )
+        }
+
+    /**
+     * Last thing before USB is let go: if the belt might be moving, stop it.
+     *
+     * Closing STRIDE used to close the connection and nothing else. The board
+     * has no watchdog for a console that has gone quiet, so it carried on at
+     * the last speed it was given, with nobody left to tell it otherwise. When
+     * STRIDE is the home app it comes straight back and [enforceStopped] gets
+     * there a few seconds later; when it is not, nothing ever did.
+     *
+     * Runs on the main thread and blocks it for at most a couple of seconds,
+     * which is the right trade in onDestroy. The poll loop is stopped first and
+     * waited for, so this is the only thing on the endpoint.
+     */
+    private fun stopBeltBeforeLeaving() {
+        val mightBeMoving = Session.isMoving(session) || stopping ||
+            lastBoardMode == FitPro.Mode.RUNNING || beltStillKph() >= STOPPED_KPH
+        running = false
+        try { pollThread?.join(1500) } catch (_: InterruptedException) {}
+        if (!mightBeMoving) return
+        for (attempt in 1..6) {
+            val reply = conn.exchange(FitPro.readWrite(deviceId, READS, stopFrame(attempt)))
+            if (reply != null && FitPro.rejectReason(reply, READS) == null) {
+                Log.i(TAG, "closing — belt told to stop (attempt $attempt)")
+                return
+            }
+            try { Thread.sleep(POLL_MS) } catch (_: InterruptedException) {}
+        }
+        Log.w(TAG, "closing — the board refused every stop; the belt may still be moving")
     }
 
     /**
@@ -2598,7 +2653,7 @@ class MainActivity : Activity() {
         val err = conn.open(device)
         if (err != null) { Log.e(TAG, "open failed: $err"); return }
         running = true
-        thread(name = "fitpro-poll") { pollLoop() }
+        pollThread = thread(name = "fitpro-poll") { pollLoop() }
     }
 
     /**
@@ -3842,7 +3897,7 @@ class MainActivity : Activity() {
         // next start-up sweep, the file would lose it and keep only the raw,
         // possibly 2010, date.
         abandonRecording()
-        running = false
+        stopBeltBeforeLeaving()
         ftms.stop()
         // The button would otherwise outlive the thing it switches back to.
         stopService(Intent(this, SwitchBubble::class.java))

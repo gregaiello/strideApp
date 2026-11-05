@@ -30,7 +30,7 @@ The software infrastructure/architecture is presented below for information:
 > and it cuts the motor directly. STRIDE drives the incline, but speed is only
 > ever suggested. You decide when to go faster.
 > The console's own STOP and START keys pause and resume the walk in STRIDE
-> as well, so one press is enough.
+> as well, so one press is enough. Closing STRIDE stops the belt.
 
 > **Gen 7 / iFit 2.0.** Second-hand reports say this update closes the
 > privileged-mode route everything here depends on. If you know how to do this on Gen 7
