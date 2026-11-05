@@ -4,6 +4,9 @@
 
 Step-by-step guide for this fork, from a factory reset to a .fit on Strava: [docs/stride-fit-test-guide.html](docs/stride-fit-test-guide.html) (download it and open it in a browser; GitHub shows HTML as source).
 
+The software infrastructure/architecture is presented below for information:
+<img width="1763" height="930" alt="image" src="https://github.com/user-attachments/assets/6e44d891-9944-4b02-8342-51481d98fe7f" />
+
 **Replace the iFit software on a NordicTrack treadmill. Keep the belt, lose the subscription.**
 
 **Please note**: This is a hobby project by one person and Claude Code, please don't get upset at that. Claude Code is enabling me to be able to do something I've dreamed of doing for a few years but didn't have the ability. Now I'm able to walk/run on my own physical hardware that I bought without it having someone else's subscription software on it. If you don't like that 90% of this was coded with AI tools like Claude Code - then this isn't the project for you. If you want to fork this, put your fingerprints all over it ... please do, I'd welcome that!
