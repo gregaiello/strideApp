@@ -2972,6 +2972,51 @@ class MainActivity : Activity() {
         return mapOf(FitPro.Field.KPH to targetKph)
     }
 
+    /**
+     * The console's own STOP and START keys, kept in step with the screen.
+     *
+     * Those keys go straight to the board; this app only sees the result, as
+     * the board switching WorkoutMode by itself. Before this, STOP on the
+     * console stopped the belt while the walk carried on: the dial followed
+     * the board down to 0, the clock kept running, and stopping properly took
+     * STOP on the console and STOP on the screen. Logged on 2026-11-05: a
+     * walk at 2.0 km/h, then Running -> Pause from the console's STOP and
+     * Pause -> Running from its START, with nothing from this app in between.
+     *
+     * Every Pause this app writes (its STOP, a wind-down's end, a finished
+     * walk, [enforceStopped]) is written after the session has already left a
+     * moving state. So Running -> Pause while the session still counts as
+     * moving can only have come from the console, and it is treated exactly
+     * like STOP on the screen, minus the write: the board has stopped already.
+     *
+     * Pause -> Running while paused is the console's START, and resumes the
+     * walk at whatever speed the board starts at. Nothing is written for that
+     * either, so speed stays a user action (the key press itself), and
+     * [enforceStopped] no longer fights a belt the walker just started. Not
+     * after the safety key: that needs acknowledging on screen first, as
+     * RESUME does.
+     */
+    private fun followConsoleButtons(was: Int?, now: Int) {
+        if (was == FitPro.Mode.RUNNING && now == FitPro.Mode.PAUSE &&
+            Session.isMoving(session) && !stopping) {
+            accumulatedMs += SystemClock.elapsedRealtime() - activeSince
+            session = Session.PAUSED
+            phaseEndsAt = 0L
+            if (targetKph > 0.0) pausedKph = targetKph
+            targetKph = 0.0
+            rampTo = 0.0
+            rampReason = ""
+            Log.i(TAG, "STOP pressed on the console — walk paused")
+        } else if (was == FitPro.Mode.PAUSE && now == FitPro.Mode.RUNNING &&
+            session == Session.PAUSED && !stopping && !dmk) {
+            session = Session.ACTIVE
+            activeSince = SystemClock.elapsedRealtime()
+            rampTo = 0.0
+            rampReason = ""
+            Log.i(TAG, "START pressed on the console — walk resumed")
+        }
+    }
+
     /** Fold one board reading into the session and return what to display. */
     private fun accumulate(v: Map<FitPro.Field, Double>): Snapshot {
         advancePhase()
@@ -2984,7 +3029,9 @@ class MainActivity : Activity() {
         if (keyOut) dmkLatched = true
         if (boardMode != null && boardMode != lastBoardMode) {
             Log.i(TAG, "board WorkoutMode -> $boardMode (${FitPro.Mode.name(boardMode)})")
+            val was = lastBoardMode
             lastBoardMode = boardMode
+            followConsoleButtons(was, boardMode)
         }
         // Any mode but Sleep means the machine is up, however it got there —
         // our write, the physical START, or somebody's foot on the belt. The
