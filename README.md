@@ -1,6 +1,8 @@
 # STRIDE
 
-**Forked from keranm/strideApp and slightly adapted for the x22i, tested and currently working**
+## Fork-related info
+
+**Original project from keranm/strideApp and slightly adapted for the x22i, tested and currently working**
 
 Step-by-step guide for this fork, from a factory reset to a .fit on Strava: [docs/stride-fit-test-guide.html](docs/stride-fit-test-guide.html) (download it and open it in a browser; GitHub shows HTML as source).
 
