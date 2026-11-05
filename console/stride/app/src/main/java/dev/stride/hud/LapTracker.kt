@@ -22,8 +22,14 @@ data class Lap(
     val descentM: Double,
 )
 
-/** The lap in progress, for the running screen. */
-data class LapLive(val index: Int, val activeSec: Double, val distanceM: Double)
+/** The lap in progress, for the running screen. [avgHr] 0 means no pulse yet. */
+data class LapLive(
+    val index: Int,
+    val activeSec: Double,
+    val distanceM: Double,
+    val avgHr: Int = 0,
+    val ascentM: Double = 0.0,
+)
 
 /**
  * Lap marks for structured training: a button that closes one lap and opens
@@ -110,7 +116,8 @@ class LapTracker {
     @Synchronized fun live(activeSec: Double, distanceM: Double): LapLive? {
         if (!started) return null
         val pending = (distanceM - lastDistance).coerceAtLeast(0.0)
-        return LapLive(index, (activeSec - startActive).coerceAtLeast(0.0), distance + pending)
+        return LapLive(index, (activeSec - startActive).coerceAtLeast(0.0), distance + pending,
+            avgHr = if (hrN > 0) (hrSum / hrN).toInt() else 0, ascentM = ascent)
     }
 
     @Synchronized fun closed(): List<Lap> = closed.toList()

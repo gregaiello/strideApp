@@ -26,7 +26,8 @@
         0 –  66   chrome bar
       104 – 420   dials and centre bay
       444 – 532   telemetry strip
-      552 – 640   coach, docked. Empty band when the coach is silent.
+      548 – 636   the lap in progress, during a workout
+      552 – 640   coach, docked over the lap row while it speaks
       660 – 764   control row
 
    Chromium 83: no `inset`, no flexbox `gap`, no `:has()`, no CSS nesting.
@@ -197,8 +198,12 @@ button{font-family:inherit;color:inherit;background:none;border:none;text-align:
 .dial svg{position:absolute;left:0;top:0;width:300px;height:300px}
 .dial .k{position:absolute;left:0;top:64px;width:300px;text-align:center;
          font-size:13px;letter-spacing:.28em;color:var(--dim)}
-.dial .v{position:absolute;left:0;top:96px;width:300px;text-align:center;
-         font-size:86px;font-weight:500;letter-spacing:-.03em;line-height:1}
+/* 60px, not the 86 it was drawn at. Pace is five characters ("12:30") and
+   at 86px it ran past the ring on both sides; the incline matches it so the
+   two dials still read as a pair. Set a little lower than the old top so the
+   widest line sits where the ring's chord is widest. */
+.dial .v{position:absolute;left:0;top:106px;width:300px;text-align:center;
+         font-size:60px;font-weight:500;letter-spacing:-.03em;line-height:1}
 .dial .n{position:absolute;left:0;top:196px;width:300px;text-align:center;
          font-size:15px;letter-spacing:.06em}
 .dial.l .n{color:var(--accent)}
@@ -241,8 +246,25 @@ button{font-family:inherit;color:inherit;background:none;border:none;text-align:
 .tele .hr .k{color:var(--ghost)}
 .tele .hr .v{color:var(--ghost)}
 
+/* ---- the lap row ------------------------------------------------------------
+   The lap used to be a sixth cell on the telemetry strip, and at 1212/6 px its
+   time-plus-pace overflowed and pushed "/KM" out of the box. It has a row of its
+   own now, in the coach's band: the coach is off on most walks, and when it
+   does speak it docks on top for a few seconds and goes away again. A lap row
+   that blinks out under a coach line is a smaller loss than a lap readout
+   squeezed into a sixth of the width. */
+.laprow{position:absolute;left:34px;top:548px;width:1212px;height:88px;
+        background:var(--chrome);border-top:1px solid var(--line);
+        border-bottom:1px solid var(--line);display:flex}
+.laprow .cell{flex:1;position:relative;border-right:1px solid var(--hair)}
+.laprow .cell:last-child{border-right:none}
+.laprow .k{position:absolute;left:26px;top:16px;font-size:12px;letter-spacing:.24em;color:var(--dim)}
+.laprow .v{position:absolute;left:26px;top:40px;font-size:34px;font-weight:500}
+.laprow .v .u{font-size:16px;color:var(--dim)}
+.laprow.flash .lapc .k,.laprow.flash .lapc .v{color:var(--accent)}
+
 /* ---- coach ---------------------------------------------------------------- */
-/* Its own band, below the telemetry strip. Covers nothing at any time. */
+/* Its own band, below the telemetry strip, docked over the lap row. */
 .coach{position:absolute;left:34px;top:552px;width:1212px;height:88px;
        background:#14191b;border:1px solid #2c383c;border-radius:6px;
        opacity:0;pointer-events:none;transition:opacity .3s ease}
@@ -417,11 +439,11 @@ button{font-family:inherit;color:inherit;background:none;border:none;text-align:
           font-size:17px;letter-spacing:.3em;text-transform:uppercase;color:#161b1d}
 
 /* ---- laps --------------------------------------------------------------
-   The LAP key is a mark, not a control (see LapTracker.kt). The lap cell joins
-   the telemetry row only during a workout, and for three seconds after a press
-   it lights up and names the lap just closed, so a mid-stride tap is visibly a
+   The LAP key is a mark, not a control (see LapTracker.kt). The lap row shows
+   only during a workout, and for three seconds after a press its first cell
+   lights up and names the lap just closed, so a mid-stride tap is visibly a
    tap that landed. */
-.tele .lapc.flash .k,.tele .lapc.flash .v{color:var(--accent)}
+
 /* Every summary here already spends its whole panel, so the laps get a sheet of
    their own, opened from a corner pill, rather than covering what is there. */
 .sumdate{position:absolute;left:0;top:770px;width:1280px;text-align:center;
@@ -563,7 +585,14 @@ button{font-family:inherit;color:inherit;background:none;border:none;text-align:
     <div class="cell"><div class="k">CALORIES</div><div class="v mono" id="cals">0</div></div>
     <div class="cell"><div class="k">CLIMBED</div><div class="v mono"><span id="climb">0</span><span class="u"> M</span></div></div>
     <div class="cell hr"><div class="k">HEART RATE</div><div class="v mono" id="pulse">&mdash;&mdash;</div></div>
-    <div class="cell lapc" id="lapCell" style="display:none"><div class="k" id="lapK">LAP 1</div><div class="v mono"><span id="lapTime">0:00</span><span class="u" id="lapPace"></span></div></div>
+  </div>
+
+  <div class="laprow" id="lapRow" style="display:none">
+    <div class="cell lapc"><div class="k" id="lapK">LAP 1</div><div class="v mono" id="lapTime">0:00</div></div>
+    <div class="cell"><div class="k">LAP DISTANCE</div><div class="v mono"><span id="lapDist">0</span><span class="u"> M</span></div></div>
+    <div class="cell"><div class="k">LAP AVG HR</div><div class="v mono" id="lapHr">&mdash;&mdash;</div></div>
+    <div class="cell"><div class="k">LAP CLIMB</div><div class="v mono"><span id="lapClimb">0</span><span class="u"> M</span></div></div>
+    <div class="cell"><div class="k">LAP VAM</div><div class="v mono"><span id="lapVam">&mdash;</span><span class="u"> M/H</span></div></div>
   </div>
 
   <div class="coach" id="coach">
@@ -1145,22 +1174,26 @@ function renderWarm(s){
       : 'Easy pace. Skip whenever you are ready.';
 }
 
-/** m:ss per km, or a dash while the lap is too short to have a pace. */
-function paceText(sec, m){
-  const p = STRIDE.lapPace(sec, m);
-  return p ? ' ' + mmss(p) + ' /KM' : '';
+/**
+ * VAM, metres climbed per hour, over the lap so far. A dash for the first half
+ * minute: two metres in ten seconds is 720 m/h, true and useless.
+ */
+function vamText(up, sec){
+  return sec >= 30 ? String(Math.round(up / (sec / 3600))) : '—';
 }
 
 function renderLapCell(s){
-  const cell = $('lapCell');
-  cell.style.display = s.lap ? '' : 'none';
+  const row = $('lapRow');
+  row.style.display = s.lap ? '' : 'none';
   if (!s.lap) return;
   const flash = s.lap.flash;
-  cell.classList.toggle('flash', flash > 0);
-  $('lapK').textContent = flash ? 'LAP ' + flash + ' DONE'
-                                : 'LAP ' + s.lap.n + ' · ' + nf(s.lap.m) + ' M';
-  $('lapTime').textContent = mmss(s.lap.sec);
-  $('lapPace').textContent = paceText(s.lap.sec, s.lap.m);
+  row.classList.toggle('flash', flash > 0);
+  $('lapK').textContent = flash ? 'LAP ' + flash + ' DONE' : 'LAP ' + s.lap.n + ' TIME';
+  $('lapTime').textContent  = mmss(s.lap.sec);
+  $('lapDist').textContent  = nf(s.lap.m);
+  $('lapHr').textContent    = s.lap.hr ? s.lap.hr : '——';
+  $('lapClimb').textContent = s.lap.up.toFixed(1);
+  $('lapVam').textContent   = vamText(s.lap.up, s.lap.sec);
 }
 
 function renderLapTable(s){

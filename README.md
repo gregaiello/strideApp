@@ -164,7 +164,9 @@ screen. No config files, no rebuild.
 
 **Speed or pace.** The Cluster interface shows pace in min/km by default; tap
 the number to switch to km/h. Every interface scales its speed and incline
-gauges to the range your board reports, so a 40 % deck fills at 40 %.
+gauges to the range your board reports, so a 40 % deck fills at 40 %. During
+a workout Cluster gives the lap in progress its own row: time, distance,
+average heart rate, climb and VAM.
 
 **Walking under a film.** Settings → Display → Switch button puts a round
 button at the right edge, over every app, that flips between STRIDE and one

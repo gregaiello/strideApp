@@ -3302,6 +3302,8 @@ class MainActivity : Activity() {
             lap = lapLive?.index ?: 0,
             lapElapsed = lapLive?.activeSec ?: 0.0,
             lapDistance = lapLive?.distanceM ?: 0.0,
+            lapHr = lapLive?.avgHr ?: 0,
+            lapClimb = lapLive?.ascentM ?: 0.0,
             laps = if (session == Session.SUMMARY) laps.closed() else emptyList(),
             lapFlash = if (SystemClock.elapsedRealtime() < lapFlashUntil) lapFlashIndex else 0,
             dateUnknown = session == Session.SUMMARY && sessionStartWall() == 0L,

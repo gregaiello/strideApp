@@ -194,6 +194,10 @@ data class Snapshot(
     /** Active seconds in the current lap, paused time excluded. */
     val lapElapsed: Double = 0.0,
     val lapDistance: Double = 0.0,
+    /** The lap in progress, for its own row on the running screen: average
+     *  pulse while moving (0 = none read yet) and metres climbed. */
+    val lapHr: Int = 0,
+    val lapClimb: Double = 0.0,
     /** Closed laps. Filled on the summary only, to keep the 5 Hz frame small. */
     val laps: List<Lap> = emptyList(),
     /** For a few seconds after a press, the lap it closed, so a mid-stride tap
@@ -317,6 +321,8 @@ data class Snapshot(
         append("\"lap\":$lap,")
         append("\"lapElapsed\":${num("%.0f", lapElapsed)},")
         append("\"lapDistance\":${num("%.0f", lapDistance)},")
+        append("\"lapHr\":$lapHr,")
+        append("\"lapClimb\":${num("%.1f", lapClimb)},")
         append("\"lapFlash\":$lapFlash,")
         append("\"dateUnknown\":$dateUnknown,")
         append("\"laps\":${laps.joinToString(",", "[", "]") {

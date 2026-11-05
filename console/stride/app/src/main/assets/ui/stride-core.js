@@ -631,6 +631,7 @@ function adapt(raw) {
        only. Paused time is never lap time — Kotlin leaves it out. */
     lap:  raw.lap ? { n: raw.lap, sec: raw.lapElapsed || 0, m: raw.lapDistance || 0,
                       paceSecPerKm: lapPace(raw.lapElapsed || 0, raw.lapDistance || 0),
+                      hr: raw.lapHr || 0, up: raw.lapClimb || 0,
                       flash: raw.lapFlash || 0 } : null,
     laps: (raw.laps || []).map(lapOf),
 
@@ -1489,6 +1490,7 @@ function demo(opts) {
       suggestPace: guided ? 5.6 : 0, inclineAuto: true,
       lap: moving || phase === 'paused' ? lapN : 0,
       lapElapsed: t - lapT, lapDistance: dist - lapD,
+      lapHr: 128, lapClimb: Math.round((dist - lapD) * 0.04 * 10) / 10,
       lapFlash: Date.now() < flashUntil ? flashN : 0,
       laps: phase === 'summary' ? DEMO_LAPS : [],
       dateUnknown: phase === 'summary' && q.nodate === '1',

@@ -13,7 +13,7 @@ class SnapshotLapJsonTest {
         distance = 1250.4, elapsed = 600.2, calories = 80.0, pulse = 150, fan = 0,
         session = Session.ACTIVE, workout = "", dmk = false, ramping = "", phaseLeft = 0.0,
         boardMode = 2, avgSpeed = 8.9, maxSpeed = 9.5, avgIncline = 1.5, maxIncline = 6.0,
-        lap = 3, lapElapsed = 61.4, lapDistance = 250.6, lapFlash = 2, dateUnknown = true,
+        lap = 3, lapElapsed = 61.4, lapDistance = 250.6, lapHr = 141, lapClimb = 3.26, lapFlash = 2, dateUnknown = true,
         laps = listOf(Lap(1, 0, 60_000, 60.0, 250.0, 150, 5.0, 0.0)),
     )
 
@@ -22,6 +22,8 @@ class SnapshotLapJsonTest {
         assertEquals(61, json.getInt("lapElapsed"))
         assertEquals(251, json.getInt("lapDistance"))
         assertEquals(2, json.getInt("lapFlash"))
+        assertEquals(141, json.getInt("lapHr"))
+        assertEquals(3.3, json.getDouble("lapClimb"), 1e-9)
         assertTrue(json.getBoolean("dateUnknown"))
         val lap = json.getJSONArray("laps").getJSONObject(0)
         assertEquals(1, lap.getInt("i"))
