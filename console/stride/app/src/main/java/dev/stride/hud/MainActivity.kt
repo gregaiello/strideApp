@@ -2,6 +2,7 @@ package dev.stride.hud
 
 import android.annotation.SuppressLint
 import android.app.Activity
+import android.app.ActivityManager
 import android.app.PendingIntent
 import android.content.BroadcastReceiver
 import android.content.Context
@@ -36,6 +37,42 @@ class MainActivity : Activity() {
 
     companion object {
         const val TAG = FitProConnection.TAG
+
+        /**
+         * The one window that owns the board, or null.
+         *
+         * Android will happily run two of these. Started as an ordinary app
+         * (the launcher icon, BootReceiver, `am start`) and then sent HOME while
+         * another app is in front, the HOME alias does not find this task and
+         * opens a second MainActivity beside it, in the same process. Each one
+         * opens the USB link and runs its own poll loop. Seen on 2026-11-05
+         * with a walk running: the second window came up on the welcome screen,
+         * closed the first one's recording as "interrupted", found the board in
+         * a workout it knew nothing about and spent minutes commanding a stop
+         * that the first loop's writes kept colliding with. The physical key
+         * was the only clean way out.
+         *
+         * So the first window to be created owns everything, and any later one
+         * hands the screen back to it and closes before touching anything.
+         * Cleared in onDestroy; main thread only.
+         */
+        @SuppressLint("StaticFieldLeak")
+        @Volatile private var live: MainActivity? = null
+
+        /** Marks the start a handing-over window makes. See onResume. */
+        private const val EXTRA_HANDOVER = "dev.stride.hud.HANDOVER"
+
+        /**
+         * Bring the running window to the front without creating a new one.
+         * False when there is none, and the caller has to start it.
+         */
+        fun bringToFront(ctx: Context): Boolean {
+            val a = live ?: return false
+            if (a.isFinishing || a.isDestroyed) return false
+            (ctx.getSystemService(Context.ACTIVITY_SERVICE) as ActivityManager)
+                .moveTaskToFront(a.taskId, 0)
+            return true
+        }
         const val ACTION_USB_PERMISSION = "dev.stride.hud.USB_PERMISSION"
         const val POLL_MS = 200L
 
@@ -2385,8 +2422,24 @@ class MainActivity : Activity() {
     }
 
     @SuppressLint("SetJavaScriptEnabled", "AddJavascriptInterface")
+    /** True for a second window that only exists to hand over. See [live]. */
+    private var duplicate = false
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+
+        // Before anything opens the board, a recording or a page. The handover
+        // itself waits for onResume: moved from here, while Android is still
+        // carrying out the HOME that created this window, the move is undone
+        // by that transition and the screen lands on whatever launcher is left.
+        val other = live
+        if (other != null && !other.isFinishing && !other.isDestroyed) {
+            duplicate = true
+            Log.w(TAG, "a second STRIDE window was opened (${intent?.categories}) — " +
+                    "handing over to the one already running")
+            return
+        }
+        live = this
 
         // Lets the HUD be inspected and driven from a laptop over adb, so
         // layout can be checked against fake state without arming the belt.
@@ -3655,7 +3708,33 @@ class MainActivity : Activity() {
         ftms.start()
     }
 
+    /** A window that only exists to hand over does so here. See [live]. */
+    override fun onResume() {
+        super.onResume()
+        if (duplicate) {
+            // Two routes back, because one of them is blocked right after a
+            // HOME press: Android ignores moveTaskToFront from an app for about
+            // five seconds after HOME (app switch protection), and the screen
+            // was left on the stock launcher. A start request is queued through
+            // that window instead of dropped, and with REORDER_TO_FRONT it
+            // reuses the running window's task rather than making a third.
+            // The extra stops a queued start from ever handing over again.
+            bringToFront(this)
+            if (!intent.getBooleanExtra(EXTRA_HANDOVER, false)) {
+                startActivity(Intent(this, MainActivity::class.java)
+                    .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_REORDER_TO_FRONT)
+                    .putExtra(EXTRA_HANDOVER, true))
+            }
+            finish()
+            return
+        }
+    }
+
     override fun onDestroy() {
+        // A window that handed over owns nothing, and the cleanup below would
+        // close the running window's radio, link and recording.
+        if (duplicate) { super.onDestroy(); return }
+        if (live === this) live = null
         // Closed here while the corrected start is still known. Left to the
         // next start-up sweep, the file would lose it and keep only the raw,
         // possibly 2010, date.
