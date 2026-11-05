@@ -2,6 +2,7 @@ package dev.stride.hud
 
 import android.annotation.SuppressLint
 import android.app.Activity
+import android.app.ActivityManager
 import android.app.PendingIntent
 import android.content.BroadcastReceiver
 import android.content.Context
@@ -36,6 +37,42 @@ class MainActivity : Activity() {
 
     companion object {
         const val TAG = FitProConnection.TAG
+
+        /**
+         * The one window that owns the board, or null.
+         *
+         * Android will happily run two of these. Started as an ordinary app
+         * (the launcher icon, BootReceiver, `am start`) and then sent HOME while
+         * another app is in front, the HOME alias does not find this task and
+         * opens a second MainActivity beside it, in the same process. Each one
+         * opens the USB link and runs its own poll loop. Seen on 2026-11-05
+         * with a walk running: the second window came up on the welcome screen,
+         * closed the first one's recording as "interrupted", found the board in
+         * a workout it knew nothing about and spent minutes commanding a stop
+         * that the first loop's writes kept colliding with. The physical key
+         * was the only clean way out.
+         *
+         * So the first window to be created owns everything, and any later one
+         * hands the screen back to it and closes before touching anything.
+         * Cleared in onDestroy; main thread only.
+         */
+        @SuppressLint("StaticFieldLeak")
+        @Volatile private var live: MainActivity? = null
+
+        /** Marks the start a handing-over window makes. See onResume. */
+        private const val EXTRA_HANDOVER = "dev.stride.hud.HANDOVER"
+
+        /**
+         * Bring the running window to the front without creating a new one.
+         * False when there is none, and the caller has to start it.
+         */
+        fun bringToFront(ctx: Context): Boolean {
+            val a = live ?: return false
+            if (a.isFinishing || a.isDestroyed) return false
+            (ctx.getSystemService(Context.ACTIVITY_SERVICE) as ActivityManager)
+                .moveTaskToFront(a.taskId, 0)
+            return true
+        }
         const val ACTION_USB_PERMISSION = "dev.stride.hud.USB_PERMISSION"
         const val POLL_MS = 200L
 
@@ -1451,6 +1488,45 @@ class MainActivity : Activity() {
             return cfg.json().toString()
         }
 
+        // --- the switch button (SwitchBubble) --------------------------------
+
+        /**
+         * What the button could flip to: the installed apps from
+         * [SwitchBubble.VIDEO_APPS] that have a launcher entry. One that is
+         * already chosen stays listed even if it drops off that list, so it
+         * can still be turned off.
+         */
+        @JavascriptInterface fun launchableApps(): String {
+            val pm = packageManager
+            val main = Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_LAUNCHER)
+            val out = JSONArray()
+            pm.queryIntentActivities(main, 0)
+                .map { it.activityInfo.packageName to it.loadLabel(pm).toString() }
+                .filter { it.first in SwitchBubble.VIDEO_APPS || it.first == cfg.switchApp() }
+                .distinctBy { it.first }
+                .sortedBy { it.second.lowercase() }
+                .forEach { out.put(JSONObject().put("pkg", it.first).put("label", it.second)) }
+            return out.toString()
+        }
+
+        @JavascriptInterface fun overlayAllowed(): Boolean = SwitchBubble.allowed(this@MainActivity)
+
+        /**
+         * The system screen for the grant. The console may have had its
+         * Settings app hidden, in which case this does nothing and the adb line
+         * on the settings screen is the way.
+         */
+        @JavascriptInterface fun requestOverlay() {
+            runOnUiThread {
+                try {
+                    startActivity(Intent(android.provider.Settings.ACTION_MANAGE_OVERLAY_PERMISSION,
+                        android.net.Uri.parse("package:$packageName")))
+                } catch (e: Exception) {
+                    Log.w(TAG, "switch: no overlay settings screen (${e.message})")
+                }
+            }
+        }
+
         /** Screen sleep. The panel is the only light in the room at 6am. */
         @JavascriptInterface fun dim(on: Boolean) {
             runOnUiThread {
@@ -1588,11 +1664,14 @@ class MainActivity : Activity() {
 
             Settings.HR_SOURCE, Settings.HR_ADDR -> applyStrap()
 
+            Settings.SWITCH_APP -> runOnUiThread { SwitchBubble.sync(this, cfg) }
+
             // A reset changes everything at once.
             "" -> {
                 Thread { applyMqttSettings() }.start()
                 applyBrightness()
                 applyStrap()
+                runOnUiThread { SwitchBubble.sync(this, cfg) }
             }
         }
     }
@@ -2385,8 +2464,24 @@ class MainActivity : Activity() {
     }
 
     @SuppressLint("SetJavaScriptEnabled", "AddJavascriptInterface")
+    /** True for a second window that only exists to hand over. See [live]. */
+    private var duplicate = false
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+
+        // Before anything opens the board, a recording or a page. The handover
+        // itself waits for onResume: moved from here, while Android is still
+        // carrying out the HOME that created this window, the move is undone
+        // by that transition and the screen lands on whatever launcher is left.
+        val other = live
+        if (other != null && !other.isFinishing && !other.isDestroyed) {
+            duplicate = true
+            Log.w(TAG, "a second STRIDE window was opened (${intent?.categories}) — " +
+                    "handing over to the one already running")
+            return
+        }
+        live = this
 
         // Lets the HUD be inspected and driven from a laptop over adb, so
         // layout can be checked against fake state without arming the belt.
@@ -2877,6 +2972,51 @@ class MainActivity : Activity() {
         return mapOf(FitPro.Field.KPH to targetKph)
     }
 
+    /**
+     * The console's own STOP and START keys, kept in step with the screen.
+     *
+     * Those keys go straight to the board; this app only sees the result, as
+     * the board switching WorkoutMode by itself. Before this, STOP on the
+     * console stopped the belt while the walk carried on: the dial followed
+     * the board down to 0, the clock kept running, and stopping properly took
+     * STOP on the console and STOP on the screen. Logged on 2026-11-05: a
+     * walk at 2.0 km/h, then Running -> Pause from the console's STOP and
+     * Pause -> Running from its START, with nothing from this app in between.
+     *
+     * Every Pause this app writes (its STOP, a wind-down's end, a finished
+     * walk, [enforceStopped]) is written after the session has already left a
+     * moving state. So Running -> Pause while the session still counts as
+     * moving can only have come from the console, and it is treated exactly
+     * like STOP on the screen, minus the write: the board has stopped already.
+     *
+     * Pause -> Running while paused is the console's START, and resumes the
+     * walk at whatever speed the board starts at. Nothing is written for that
+     * either, so speed stays a user action (the key press itself), and
+     * [enforceStopped] no longer fights a belt the walker just started. Not
+     * after the safety key: that needs acknowledging on screen first, as
+     * RESUME does.
+     */
+    private fun followConsoleButtons(was: Int?, now: Int) {
+        if (was == FitPro.Mode.RUNNING && now == FitPro.Mode.PAUSE &&
+            Session.isMoving(session) && !stopping) {
+            accumulatedMs += SystemClock.elapsedRealtime() - activeSince
+            session = Session.PAUSED
+            phaseEndsAt = 0L
+            if (targetKph > 0.0) pausedKph = targetKph
+            targetKph = 0.0
+            rampTo = 0.0
+            rampReason = ""
+            Log.i(TAG, "STOP pressed on the console — walk paused")
+        } else if (was == FitPro.Mode.PAUSE && now == FitPro.Mode.RUNNING &&
+            session == Session.PAUSED && !stopping && !dmk) {
+            session = Session.ACTIVE
+            activeSince = SystemClock.elapsedRealtime()
+            rampTo = 0.0
+            rampReason = ""
+            Log.i(TAG, "START pressed on the console — walk resumed")
+        }
+    }
+
     /** Fold one board reading into the session and return what to display. */
     private fun accumulate(v: Map<FitPro.Field, Double>): Snapshot {
         advancePhase()
@@ -2889,7 +3029,9 @@ class MainActivity : Activity() {
         if (keyOut) dmkLatched = true
         if (boardMode != null && boardMode != lastBoardMode) {
             Log.i(TAG, "board WorkoutMode -> $boardMode (${FitPro.Mode.name(boardMode)})")
+            val was = lastBoardMode
             lastBoardMode = boardMode
+            followConsoleButtons(was, boardMode)
         }
         // Any mode but Sleep means the machine is up, however it got there —
         // our write, the physical START, or somebody's foot on the belt. The
@@ -3655,13 +3797,55 @@ class MainActivity : Activity() {
         ftms.start()
     }
 
+    /*
+     * The switch button flips direction on these. Immersive mode is set again
+     * on the way back because another app showing its bars can leave them
+     * showing over STRIDE too.
+     */
+    override fun onResume() {
+        super.onResume()
+        if (duplicate) {
+            // Two routes back, because one of them is blocked right after a
+            // HOME press: Android ignores moveTaskToFront from an app for about
+            // five seconds after HOME (app switch protection), and the screen
+            // was left on the stock launcher. A start request is queued through
+            // that window instead of dropped, and with REORDER_TO_FRONT it
+            // reuses the running window's task rather than making a third.
+            // The extra stops a queued start from ever handing over again.
+            bringToFront(this)
+            if (!intent.getBooleanExtra(EXTRA_HANDOVER, false)) {
+                startActivity(Intent(this, MainActivity::class.java)
+                    .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_REORDER_TO_FRONT)
+                    .putExtra(EXTRA_HANDOVER, true))
+            }
+            finish()
+            return
+        }
+        window.decorView.systemUiVisibility =
+            View.SYSTEM_UI_FLAG_FULLSCREEN or View.SYSTEM_UI_FLAG_HIDE_NAVIGATION or
+            View.SYSTEM_UI_FLAG_IMMERSIVE_STICKY
+        SwitchBubble.front(true)
+        SwitchBubble.sync(this, cfg)
+    }
+
+    override fun onPause() {
+        if (!duplicate) SwitchBubble.front(false)
+        super.onPause()
+    }
+
     override fun onDestroy() {
+        // A window that handed over owns nothing, and the cleanup below would
+        // close the running window's button, radio and recording.
+        if (duplicate) { super.onDestroy(); return }
+        if (live === this) live = null
         // Closed here while the corrected start is still known. Left to the
         // next start-up sweep, the file would lose it and keep only the raw,
         // possibly 2010, date.
         abandonRecording()
         running = false
         ftms.stop()
+        // The button would otherwise outlive the thing it switches back to.
+        stopService(Intent(this, SwitchBubble::class.java))
         voice.close()
         mqtt.close()
         conn.close()

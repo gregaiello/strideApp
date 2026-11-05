@@ -1020,6 +1020,70 @@
       'Off lets it sleep even mid-walk, which saves the panel on long sessions.',
       toggle('keep_awake', S.keep_awake !== false)));
     sc.appendChild(g);
+
+    /* A round button at the right edge, drawn by Kotlin over every app, that
+       flips between STRIDE and the one app picked here — for walking under a
+       film and still reaching LAP in one tap. Drag it up or down to move it. */
+    var gs = group('Switch button');
+    var grantBox = el('div');
+    var appsBox = el('div');
+    gs.appendChild(row('App to switch to',
+      'A button at the right edge flips between STRIDE and this app. Drag it to move it. ' +
+      'Only video apps are listed.',
+      el('div')));
+    gs.appendChild(grantBox);
+    gs.appendChild(appsBox);
+    sc.appendChild(gs);
+
+    var grantWas = null;
+    function drawGrant() {
+      var ok = true;
+      try { ok = !!bridge().overlayAllowed(); } catch (e) {}
+      // Ticked every 1.2 s: redrawing an unchanged ALLOW under a finger eats the press.
+      if (ok === grantWas) return;
+      grantWas = ok;
+      grantBox.innerHTML = '';
+      if (ok) return;
+      var r = el('div', 'sx-dev');
+      r.innerHTML = '<div class="sx-dn"><div class="sx-n">Not allowed to draw over other apps</div>' +
+        '<div class="sx-d">Allow it in the system screen, or over adb: ' +
+        'appops set dev.stride.hud SYSTEM_ALERT_WINDOW allow</div></div>';
+      r.appendChild(press(el('button', 'sx-pill sx-go', 'ALLOW'), function () {
+        try { bridge().requestOverlay(); } catch (e) {}
+      }));
+      grantBox.appendChild(r);
+    }
+
+    function drawApps() {
+      var list = [];
+      try { list = JSON.parse(bridge().launchableApps()); } catch (e) {}
+      appsBox.innerHTML = '';
+      if (!list.length) {
+        appsBox.appendChild(el('div', 'sx-empty',
+          'No video apps installed.<br>Netflix, Prime Video or NewPipe, for example. See the fork guide.'));
+        return;
+      }
+      var cur = S.switch_app || '';
+      list.forEach(function (a) {
+        var on = a.pkg === cur;
+        var r = el('div', 'sx-dev' + (on ? ' sx-on' : ''));
+        var dn = el('div', 'sx-dn');
+        dn.appendChild(el('div', 'sx-n'));
+        dn.appendChild(el('div', 'sx-d'));
+        // Labels come from whatever is installed; textContent, not innerHTML.
+        dn.firstChild.textContent = a.label;
+        dn.lastChild.textContent = on ? 'Switch button on' : a.pkg;
+        r.appendChild(dn);
+        r.appendChild(press(el('button', 'sx-pill' + (on ? ' sx-warn' : ' sx-go'), on ? 'TURN OFF' : 'USE'),
+          function () { save('switch_app', on ? '' : a.pkg); drawApps(); }));
+        appsBox.appendChild(r);
+      });
+    }
+
+    drawGrant();
+    drawApps();
+    // The grant is given in another screen; pick it up when STRIDE comes back.
+    pane.sxTick = drawGrant;
   }
 
   // --- about ---
