@@ -155,6 +155,17 @@ That's how most of my own installs have gone.
 coach, heart rate, display: all of it lives in Settings on the treadmill's own
 screen. No config files, no rebuild.
 
+**Walking under a film.** Settings → Display → Switch button puts a round
+button at the right edge, over every app, that flips between STRIDE and one
+streaming app you pick, so LAP and END stay one tap away. Drag it up or down
+to move it. It is off until you pick an app, and Android has to allow STRIDE
+to draw over other apps: tap ALLOW there, or over adb
+`adb shell appops set dev.stride.hud SYSTEM_ALERT_WINDOW allow`.
+The console has no Play Store; the [fork guide](docs/stride-fit-test-guide.html)
+(step 11) covers installing Google Play services (the official YouTube app
+refuses to run without it), YouTube, Netflix and Prime Video over adb. Only
+video apps are offered for the button.
+
 **The Home Assistant side reads one file:**
 
 ```sh

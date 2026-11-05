@@ -85,6 +85,8 @@ class Settings(context: Context) {
         const val CLOCK_24 = "clock_24"
         const val BRIGHTNESS = "brightness"       // "dim" | "normal" | "bright"
         const val KEEP_AWAKE = "keep_awake"
+        /** Package the switch button flips to, or "" for no button. */
+        const val SWITCH_APP = "switch_app"
 
         // --- saved walks (fork-only) ---
         /** "barometric" | "generic": the device a .fit claims to come from. */
@@ -385,6 +387,12 @@ class Settings(context: Context) {
     fun clock24(): Boolean = prefs.getBoolean(CLOCK_24, true)
     fun keepAwake(): Boolean = prefs.getBoolean(KEEP_AWAKE, true)
 
+    /**
+     * Off by default: a button floating over every app is something to ask
+     * for, and it needs an overlay grant that a fresh console does not have.
+     */
+    fun switchApp(): String = prefs.getString(SWITCH_APP, "") ?: ""
+
     // --- saved walks (fork-only) ----------------------------------------------
 
     /**
@@ -444,6 +452,7 @@ class Settings(context: Context) {
         .put(CLOCK_24, clock24())
         .put(BRIGHTNESS, prefs.getString(BRIGHTNESS, "normal"))
         .put(KEEP_AWAKE, keepAwake())
+        .put(SWITCH_APP, switchApp())
         .put(FIT_IDENTITY, fitIdentity())
 
     /**

@@ -1488,6 +1488,45 @@ class MainActivity : Activity() {
             return cfg.json().toString()
         }
 
+        // --- the switch button (SwitchBubble) --------------------------------
+
+        /**
+         * What the button could flip to: the installed apps from
+         * [SwitchBubble.VIDEO_APPS] that have a launcher entry. One that is
+         * already chosen stays listed even if it drops off that list, so it
+         * can still be turned off.
+         */
+        @JavascriptInterface fun launchableApps(): String {
+            val pm = packageManager
+            val main = Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_LAUNCHER)
+            val out = JSONArray()
+            pm.queryIntentActivities(main, 0)
+                .map { it.activityInfo.packageName to it.loadLabel(pm).toString() }
+                .filter { it.first in SwitchBubble.VIDEO_APPS || it.first == cfg.switchApp() }
+                .distinctBy { it.first }
+                .sortedBy { it.second.lowercase() }
+                .forEach { out.put(JSONObject().put("pkg", it.first).put("label", it.second)) }
+            return out.toString()
+        }
+
+        @JavascriptInterface fun overlayAllowed(): Boolean = SwitchBubble.allowed(this@MainActivity)
+
+        /**
+         * The system screen for the grant. The console may have had its
+         * Settings app hidden, in which case this does nothing and the adb line
+         * on the settings screen is the way.
+         */
+        @JavascriptInterface fun requestOverlay() {
+            runOnUiThread {
+                try {
+                    startActivity(Intent(android.provider.Settings.ACTION_MANAGE_OVERLAY_PERMISSION,
+                        android.net.Uri.parse("package:$packageName")))
+                } catch (e: Exception) {
+                    Log.w(TAG, "switch: no overlay settings screen (${e.message})")
+                }
+            }
+        }
+
         /** Screen sleep. The panel is the only light in the room at 6am. */
         @JavascriptInterface fun dim(on: Boolean) {
             runOnUiThread {
@@ -1625,11 +1664,14 @@ class MainActivity : Activity() {
 
             Settings.HR_SOURCE, Settings.HR_ADDR -> applyStrap()
 
+            Settings.SWITCH_APP -> runOnUiThread { SwitchBubble.sync(this, cfg) }
+
             // A reset changes everything at once.
             "" -> {
                 Thread { applyMqttSettings() }.start()
                 applyBrightness()
                 applyStrap()
+                runOnUiThread { SwitchBubble.sync(this, cfg) }
             }
         }
     }
@@ -3708,7 +3750,11 @@ class MainActivity : Activity() {
         ftms.start()
     }
 
-    /** A window that only exists to hand over does so here. See [live]. */
+    /*
+     * The switch button flips direction on these. Immersive mode is set again
+     * on the way back because another app showing its bars can leave them
+     * showing over STRIDE too.
+     */
     override fun onResume() {
         super.onResume()
         if (duplicate) {
@@ -3728,11 +3774,21 @@ class MainActivity : Activity() {
             finish()
             return
         }
+        window.decorView.systemUiVisibility =
+            View.SYSTEM_UI_FLAG_FULLSCREEN or View.SYSTEM_UI_FLAG_HIDE_NAVIGATION or
+            View.SYSTEM_UI_FLAG_IMMERSIVE_STICKY
+        SwitchBubble.front(true)
+        SwitchBubble.sync(this, cfg)
+    }
+
+    override fun onPause() {
+        if (!duplicate) SwitchBubble.front(false)
+        super.onPause()
     }
 
     override fun onDestroy() {
         // A window that handed over owns nothing, and the cleanup below would
-        // close the running window's radio, link and recording.
+        // close the running window's button, radio and recording.
         if (duplicate) { super.onDestroy(); return }
         if (live === this) live = null
         // Closed here while the corrected start is still known. Left to the
@@ -3741,6 +3797,8 @@ class MainActivity : Activity() {
         abandonRecording()
         running = false
         ftms.stop()
+        // The button would otherwise outlive the thing it switches back to.
+        stopService(Intent(this, SwitchBubble::class.java))
         voice.close()
         mqtt.close()
         conn.close()

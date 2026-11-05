@@ -47,7 +47,8 @@
 <main>
   <h1>STRIDE on the treadmill: laps + .FIT test</h1>
   <p class="sub">From a factory-fresh console to a .fit on Strava. Build under test: your fork's
-    <code>main</code> (laps, per-second recording, .fit export, "Strava elevation" on).
+    <code>main</code> (laps, per-second recording, .fit export, "Strava elevation" on, optional
+    switch button for a streaming app).
     Laptop commands are for <b>Windows PowerShell</b>. Tick each step off as you go; the ticks are
     remembered in this browser.</p>
 
@@ -271,7 +272,80 @@ mv tools/device-state.txt ../device-state.txt</code></pre>
         keep the climb.</li>
       <li><b>Interface</b>: any of the five. <i>Original</i> is the most tested.</li>
       <li>Home Assistant: optional; skip it for this test.</li>
+      <li><b>Display → Switch button</b> (optional): tap <b>USE</b> next to your streaming app. Only video apps
+        are listed (Netflix, Prime Video, NewPipe and a few others, if installed). A round button showing the
+        app's icon appears at the right edge, over every app, and flips between STRIDE and that app. Drag it up or down to
+        move it. If the section says STRIDE is not allowed to draw over other apps, tap <b>ALLOW</b>, or from
+        the laptop:
+<pre><code>&amp; $adb -s <span class="ipv">CONSOLE-IP</span>:5555 shell appops set dev.stride.hud SYSTEM_ALERT_WINDOW allow</code></pre></li>
     </ul>
+    <details><summary>Install YouTube, Netflix and Prime Video (for the switch button)</summary>
+      <p>The console has no Play Store, so everything is installed from the laptop. YouTube also needs Google Play
+        services, which the console doesn't have either (without it YouTube says <i>"your device does not
+        support Google Play"</i>), so Google's three parts go on first. These are the newest versions that run
+        on the console's Android 9 (checked November 2026):</p>
+      <ul>
+        <li><b>Google Services Framework 9-6957767</b>:
+          <a href="https://www.apkmirror.com/apk/google-inc/google-services-framework/google-services-framework-9-6957767-release/google-services-framework-9-6957767-android-apk-download/">APKMirror</a>.
+          It must be a <code>9-…</code> version, the one built for Android 9.</li>
+        <li><b>Google Play services 26.36.33</b>, the <i>arm64-v8a + armeabi-v7a</i>, <i>Android 9.0+</i>,
+          <i>nodpi</i> APK:
+          <a href="https://www.apkmirror.com/apk/google-inc/google-play-services/google-play-services-26-36-33-release/google-play-services-26-36-33-100400-986028547-android-apk-download/">APKMirror</a>.
+          A newer stable release (not one marked <i>beta</i>) with that same variant is fine.</li>
+        <li><b>Google Play Store 53.9.23</b>, the <i>universal</i>, <i>Android 7.0+</i> APK:
+          <a href="https://www.apkmirror.com/apk/google-inc/google-play-store/google-play-store-53-9-23-release/google-play-store-53-9-23-24-0-pr-1012244613-5-android-apk-download/">APKMirror</a>.</li>
+        <li><b>YouTube 21.23.485</b>, the universal <i>APK</i> (not a <i>BUNDLE</i>):
+          <a href="https://www.apkmirror.com/apk/google-inc/youtube/youtube-21-23-485-release/youtube-21-23-485-android-apk-download/">APKMirror</a>.
+          21.23 is the last YouTube for Android 9; from 21.24 on it needs Android 10, so don't update past it.</li>
+        <li><b>Netflix 9.90.1 build 12 74817</b>:
+          <a href="https://www.apkmirror.com/apk/netflix-inc/netflix/netflix-9-90-1-build-12-74817-release/netflix-9-90-1-build-12-74817-android-apk-download/">APKMirror</a>.
+          Netflix still supports Android 9, so a newer stable release with <i>Android 9.0+</i> in its variant list
+          is fine too.</li>
+        <li><b>Prime Video 3.0.479</b>, the <i>arm64-v8a</i> variant:
+          <a href="https://www.apkmirror.com/apk/amazon-mobile-llc/amazon-prime-video/amazon-prime-video-3-0-479-release/amazon-prime-video-3-0-479-647-android-apk-download/">APKMirror</a>.
+          Pick <i>Amazon Prime Video</i> (the phone app), not the <i>Android TV</i> or <i>Fire TV</i> ones.</li>
+      </ul>
+      <ol>
+        <li>Download them into your <b>Downloads</b> folder and rename them <code>gsf.apk</code>,
+          <code>gms.apk</code>, <code>vending.apk</code>, <code>youtube.apk</code>, <code>netflix.apk</code> and
+          <code>primevideo.apk</code>.</li>
+        <li>Optional, but it proves the files really come from Google, Netflix and Amazon. Check who signed them:
+<pre><code>$apksigner = (Get-ChildItem "$env:LOCALAPPDATA\Android\Sdk\build-tools\*\apksigner.bat" | Select-Object -Last 1).FullName
+foreach ($f in "gsf","gms","vending","youtube","netflix","primevideo") {
+  "== $f"; &amp; $apksigner verify --print-certs "$env:USERPROFILE\Downloads\$f.apk" | Select-String "SHA-256"
+}</code></pre>
+          <div class="ok">✅ <b>gsf, gms, vending</b>: <code>f0fd6c5b410f25cb…2d60db83</code> (Google).
+            <b>youtube</b>: one line ends <code>…7c23f326c8f994a</code> (starting <code>3d7a1223</code>).
+            <b>netflix</b>: one line ends <code>…742390e682164e6b</code> (starting <code>363863596ea9</code>).
+            <b>primevideo</b>: <code>2f19adeb284eb36f…ab6d7625</code> (Amazon Services LLC).
+            Anything else: don't install it.</div></li>
+        <li>Install, in this order: Google's three parts depend on each other. Plain <code>adb install</code> has
+          failed silently on this console, so each file is copied over and installed on the console itself:
+<pre><code>foreach ($f in "gsf","gms","vending","youtube","netflix","primevideo") {
+  &amp; $adb -s <span class="ipv">CONSOLE-IP</span>:5555 push "$env:USERPROFILE\Downloads\$f.apk" /data/local/tmp/$f.apk
+  &amp; $adb -s <span class="ipv">CONSOLE-IP</span>:5555 shell pm install -r /data/local/tmp/$f.apk
+  &amp; $adb -s <span class="ipv">CONSOLE-IP</span>:5555 shell rm -f /data/local/tmp/$f.apk
+}</code></pre>
+          <div class="ok">✅ <code>Success</code> six times.</div></li>
+        <li>Google's parts are installed as ordinary apps here, so they don't get the permissions they would have
+          on a phone. Grant them:
+<pre><code>foreach ($p in "com.google.android.gsf","com.google.android.gms","com.android.vending") {
+  $perms = &amp; $adb -s <span class="ipv">CONSOLE-IP</span>:5555 shell dumpsys package $p |
+    Select-String 'android\.permission\.[A-Z_]+' -AllMatches | ForEach-Object { $_.Matches.Value } | Sort-Object -Unique
+  foreach ($x in $perms) { &amp; $adb -s <span class="ipv">CONSOLE-IP</span>:5555 shell pm grant $p $x 2&gt;$null }
+}</code></pre>
+          Errors for permissions that can't be granted this way are normal and hidden.</li>
+        <li>On the console, open <b>YouTube</b>: it should start, at its cookie choice. Signing in is optional, in
+          YouTube or the Play Store. If Google refuses because the device <i>isn't certified</i>, the console has
+          to be registered at <code>google.com/android/uncertified</code>.</li>
+        <li>Pick an app under <b>Display → Switch button</b>.</li>
+      </ol>
+      <div class="warn">What to expect: Netflix plays in SD, because this console is not Google-certified. Play
+        services is big and the console has 2 GB of memory; uninstalling the three Google apps undoes all of it.
+        The pushes take a few minutes over Wi-Fi (Play services about 280 MB, Netflix 280 MB, YouTube and Prime
+        Video about 190 MB each). Rather not have Google on it? <a href="https://github.com/TeamNewPipe/NewPipe/releases/latest">NewPipe</a>
+        plays YouTube without any of it, in its own plainer look.</div>
+    </details>
   </section>
 
   <section class="step" data-id="b10">
@@ -308,6 +382,9 @@ mv tools/device-state.txt ../device-state.txt</code></pre>
       <li>Press <b>LAP</b> 2–3 times, a minute or more apart. Each press: the lap counter goes up, the lap time
         and distance restart, and you briefly see <i>"Lap N done"</i>.</li>
       <li><b>Pause</b> once for about 30 seconds, then resume.</li>
+      <li>If you turned on the switch button: tap it to go to your streaming app, walk a minute there, tap it
+        again to come back, and press LAP. The walk keeps counting the whole time, and the log shows no
+        <code>runaway</code>.</li>
       <li>If you have a heart-rate strap, wear it.</li>
       <li>Press <b>END</b>.</li>
     </ol>
