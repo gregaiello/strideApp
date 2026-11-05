@@ -463,6 +463,40 @@ function lapPace(sec, m) {
   return m >= 10 ? sec / (m / 1000) : 0;
 }
 
+/**
+ * What this machine can do, as its board reports it, for drawing scales.
+ *
+ * The dials used to be drawn for the C 1750 (-3 to +12 %, 20 km/h) on every
+ * treadmill. On an X22i, which goes to +40 % and 22 km/h, the incline ring
+ * was full at 12 % and stayed full for the other 28. The scale still never
+ * moves during a walk: it is the machine's range, read once the board has
+ * answered, so 6 km/h always sits in the same place on the same treadmill.
+ *
+ * Asked again every few seconds rather than once, because the page draws
+ * before the poll loop has read the board, and until then Kotlin answers with
+ * its C 1750 defaults. Display only: every request is still clamped in Kotlin.
+ */
+var LIMITS_FALLBACK = { minGrade: -3, maxGrade: 12, minKph: 1.6, maxKph: 20 };
+var limitsCache = null, limitsAt = 0;
+function limits() {
+  var now = Date.now();
+  if (limitsCache && now - limitsAt < 5000) return limitsCache;
+  limitsAt = now;
+  var l = null;
+  try {
+    if (global.Stride && global.Stride.boardLimits) l = JSON.parse(global.Stride.boardLimits());
+  } catch (e) { l = null; }
+  limitsCache = (l && l.maxKph > 0 && l.maxGrade > 0) ? l : LIMITS_FALLBACK;
+  return limitsCache;
+}
+
+/** Minutes per kilometre at a belt speed, as m:ss, or a dash when stopped. */
+function paceAt(kph) {
+  if (!(kph >= 0.5)) return '–:––';
+  var sec = Math.round(3600 / kph);
+  return Math.floor(sec / 60) + ':' + ('0' + (sec % 60)).slice(-2);
+}
+
 function lapOf(l) {
   return { n: l.i, sec: l.sec || 0, m: l.m || 0,
            paceSecPerKm: lapPace(l.sec || 0, l.m || 0),
@@ -1620,6 +1654,8 @@ global.STRIDE = {
 
   mmss: mmss,
   nf: nf,
+  limits: limits,
+  paceAt: paceAt,
   km: km,
   durationLabel: durationLabel,
   fanName: fanName,

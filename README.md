@@ -162,6 +162,10 @@ That's how most of my own installs have gone.
 coach, heart rate, display: all of it lives in Settings on the treadmill's own
 screen. No config files, no rebuild.
 
+**Speed or pace.** The Cluster interface shows pace in min/km by default; tap
+the number to switch to km/h. Every interface scales its speed and incline
+gauges to the range your board reports, so a 40 % deck fills at 40 %.
+
 **Walking under a film.** Settings → Display → Switch button puts a round
 button at the right edge, over every app, that flips between STRIDE and one
 streaming app you pick, so LAP and END stay one tap away. Drag it up or down

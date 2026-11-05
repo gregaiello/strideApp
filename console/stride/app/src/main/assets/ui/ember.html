@@ -182,7 +182,8 @@ button{font-family:inherit;color:inherit;background:none;border:none;
    mark — a decline is a bar running backwards, not an empty track. */
 .gauge .bar i{position:absolute;left:0;top:0;height:6px;width:0;background:var(--accent);
               transition:width .3s ease,left .3s ease}
-/* Where 0% sits on a scale that runs from -3 to +12. Drawn so the fill has
+/* Where 0% sits on the deck's range. 40px is -3 to +12; render() moves it to
+   wherever level falls on the range the board reports. Drawn so the fill has
    something to be measured against; without it a short backwards bar and a
    short forwards bar look the same. */
 .gauge .bar u{position:absolute;top:-3px;width:1px;height:12px;background:var(--dim);
@@ -1005,11 +1006,16 @@ window.render = function(raw){
   $('inclineNote').textContent = !guided ? 'yours'
                                : s.targets.inclineAuto ? 'set for you'
                                : 'yours until the next stretch';
-  /* The deck runs from -3% to +12%, so the bar has a zero mark at 40px and
-     fills either side of it. It used to be `Math.max(0, …)` from the left edge,
-     which drew nothing at all for a decline — and the deck does go negative. */
-  var incPx = Math.max(-3, Math.min(12, s.belt.incline)) / 15 * 200;
-  $('inclineBar').style.left  = (40 + Math.min(0, incPx)) + 'px';
+  /* The bar spans the deck's whole range as the board reports it, with a zero
+     mark where level falls, and fills either side of it. It used to be
+     `Math.max(0, …)` from the left edge, which drew nothing at all for a
+     decline, and the deck does go negative. The range was the C 1750's -3 to
+     +12 % on every machine until the board's own limits were used. */
+  var lim = STRIDE.limits(), span = lim.maxGrade - lim.minGrade;
+  var zeroPx = -lim.minGrade / span * 200;
+  var incPx = Math.max(lim.minGrade, Math.min(lim.maxGrade, s.belt.incline)) / span * 200;
+  $('inclineBar').parentNode.querySelector('u').style.left = zeroPx + 'px';
+  $('inclineBar').style.left  = (zeroPx + Math.min(0, incPx)) + 'px';
   $('inclineBar').style.width = Math.abs(incPx) + 'px';
 
   /* A suggestion. The plan never applies it — the person on the treadmill

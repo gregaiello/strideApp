@@ -1566,9 +1566,12 @@ window.render = function(s){
   $('calories').textContent = nf(nz(s.calories));
   $('pulse').textContent    = s.pulse ? s.pulse : '—';
 
-  // 0..19 km/h and -3..+12 % mapped onto 10 ticks each
-  ticks($('speedTicks'),   10, Math.round(nz(s.speed) / 19 * 10));
-  ticks($('inclineTicks'), 10, Math.round(((nz(s.incline) + 3) / 15) * 10));
+  // The machine's own range, as the board reports it, on 10 ticks each.
+  // These were 0..19 km/h and -3..+12 %, the C 1750's, on every treadmill.
+  const lim = STRIDE.limits();
+  ticks($('speedTicks'),   10, Math.round(nz(s.speed) / lim.maxKph * 10));
+  ticks($('inclineTicks'), 10, Math.round(((nz(s.incline) - lim.minGrade) /
+                                           (lim.maxGrade - lim.minGrade)) * 10));
 
   // The chip says what you're *doing*. "running" is the internal name of the
   // active session state, which read as wrong on every walk. Colour still keys

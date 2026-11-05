@@ -515,7 +515,7 @@ button{font-family:inherit;color:inherit;background:none;border:none;text-align:
       <circle id="spdTick" cx="150" cy="150" r="120" fill="none" stroke="#e5b567" stroke-width="12"
               pathLength="1000" stroke-dasharray="0 1000" transform="rotate(-90 150 150)"/>
     </svg>
-    <div class="k">SPEED KM/H</div>
+    <div class="k" id="speedK">SPEED KM/H</div>
     <div class="v mono" id="speed">0.0</div>
     <div class="n mono" id="suggest"></div>
   </div>
@@ -659,8 +659,31 @@ let suggestKph = 0;
 const $ = STRIDE.$, tap = STRIDE.tap, mmss = STRIDE.mmss, nf = STRIDE.nf;
 
 /* Dial ranges. Fixed rather than adaptive: a gauge whose full scale moves is
-   not a gauge, and half the point of a dial is learning where 6 km/h sits. */
-const SPEED_FULL = 20, INCLINE_FULL = 12;
+   not a gauge, and half the point of a dial is learning where 6 km/h sits.
+   Fixed to this machine, though, not to the C 1750 they were drawn on: full
+   scale is the top of what the board reports (STRIDE.limits). A decline uses
+   the same scale as a climb, so -6 % on a 40 % deck is a short arc, not a
+   full ring. */
+function speedFull(){ return STRIDE.limits().maxKph; }
+function inclineFull(){ return STRIDE.limits().maxGrade; }
+
+/* Speed or pace in the right-hand dial. Tap the number or its label to swap.
+   Pace by default, because min/km is what a watch and Strava show for the
+   same walk, and comparing the two meant doing 60/x in your head mid-stride.
+   Remembered in this page's storage, which is only a convenience: losing it
+   puts pace back. */
+let speedAsPace = true;
+try { speedAsPace = localStorage.getItem('cluster.speedAs') !== 'kph'; } catch (e) {}
+function speedText(kph){ return speedAsPace ? STRIDE.paceAt(kph) : kph.toFixed(1); }
+function swapSpeedUnit(){
+  speedAsPace = !speedAsPace;
+  try { localStorage.setItem('cluster.speedAs', speedAsPace ? 'pace' : 'kph'); } catch (e) {}
+  $('speedK').textContent = speedAsPace ? 'PACE MIN/KM' : 'SPEED KM/H';
+  $('speed').textContent = speedText(lastSpeed || 0);
+}
+let lastSpeed = 0;
+$('speedK').textContent = speedAsPace ? 'PACE MIN/KM' : 'SPEED KM/H';
+$('speed').textContent = speedText(0);
 
 /* ---- the lap track -------------------------------------------------------
    Cluster's oval: 140px straights and r=96, inside the 480x240 centre bay. */
@@ -816,6 +839,8 @@ tap($('btnBack'),    () => flow.back());
 /* Tapping the suggestion takes it. Accepting the coach's number used to
    mean holding + until you reached it. */
 tap($('suggest'), () => { if (suggestKph > 0) Stride.setSpeed(suggestKph); });
+tap($('speedK'), swapSpeedUnit);
+tap($('speed'), swapSpeedUnit);
 
 /* Tapping a plan used to arm the belt immediately, so choosing a shape and
    then a duration was impossible — the walk had already started. Selection
@@ -986,11 +1011,12 @@ window.render = function(raw){
 
   /* Both needles come off the belt controller, never off the setpoint. */
   $('incline').textContent = s.belt.incline.toFixed(1);
-  $('speed').textContent   = s.belt.speed.toFixed(1);
+  lastSpeed = s.belt.speed;
+  $('speed').textContent   = speedText(s.belt.speed);
   $('incArc').setAttribute('stroke-dasharray',
-    dash(s.belt.incline / INCLINE_FULL));
+    dash(s.belt.incline / inclineFull()));
   $('spdArc').setAttribute('stroke-dasharray',
-    dash(s.belt.speed / SPEED_FULL));
+    dash(s.belt.speed / speedFull()));
 
   $('inclineNote').textContent = !guided ? 'MANUAL'
                                : s.targets.inclineAuto ? 'PROFILE' : 'MANUAL OVERRIDE';
@@ -999,9 +1025,9 @@ window.render = function(raw){
      console may act on it — the pace belongs to whoever is on the belt. */
   const suggesting = guided && s.targets.suggest > 0 && !timed;
   suggestKph = suggesting ? s.targets.suggest : 0;
-  $('suggest').textContent = suggesting ? 'TGT ' + s.targets.suggest.toFixed(1) : '';
+  $('suggest').textContent = suggesting ? 'TGT ' + speedText(s.targets.suggest) : '';
   $('spdTick').setAttribute('stroke-dasharray',
-    suggesting ? tick(s.targets.suggest / SPEED_FULL) : '0 1000');
+    suggesting ? tick(s.targets.suggest / speedFull()) : '0 1000');
 
   $('elapsed').textContent = mmss(s.session.elapsed);
   $('dist').textContent    = STRIDE.km(s.session.distance);
