@@ -6,18 +6,28 @@ package dev.stride.hud
  * Strava treats an activity without positions as an indoor one and shows no
  * elevation for it at all. Giving it a track makes it an outdoor run with an
  * elevation profile, the same trick Zwift uses. The track is our own circle,
- * not Zwift's roads, and it sits in the patch of ocean off the Solomon
- * Islands where Zwift's Watopia lives: athletes already know points there
- * mean "indoors", and nobody's real run lands on top of it.
+ * not Zwift's roads.
  *
- * Tested on Strava (2026-11-03): a 400 m circle here was drawn on the map,
- * and the activity was treated as an outdoor run.
+ * **Where it sits decides the date Strava shows.** Strava gives an activity
+ * the time zone of its first GPS point. Upstream put the circle in the ocean
+ * off the Solomon Islands, where Zwift's Watopia lives, and a walk finished at
+ * 20:34 in Rome (19:34 UTC) appeared on Strava at 06:34 the next morning,
+ * Solomon Islands time, UTC+11 (seen 2026-11-06). This fork's owner walks in
+ * Italy, so the circle is in the Ligurian Sea about 8 km south of Lerici, just
+ * outside the Gulf of La Spezia: open water, so nobody's real run lands on it,
+ * and inside Italian territorial waters, so the zone should be Europe/Rome with
+ * its summer time rather than a sea zone's fixed UTC+1. Whether Strava's
+ * lookup counts territorial waters is worth checking once summer time starts;
+ * if a walk then shows an hour early, it does not.
+ *
+ * Tested on Strava (2026-11-03): a 400 m circle drawn this way was shown on the
+ * map, and the activity was treated as an outdoor run.
  *
  * Position advances by distance walked, so pace on the map matches the belt.
  */
 object SyntheticTrack {
-    const val CENTRE_LAT = -11.640
-    const val CENTRE_LON = 166.950
+    const val CENTRE_LAT = 44.000
+    const val CENTRE_LON = 9.900
     const val CIRCUMFERENCE_M = 400.0
     private const val EARTH_R = 6371008.8
 
