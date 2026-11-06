@@ -474,7 +474,7 @@ class MainActivity : Activity() {
      *  friends. Telemetry only, and silent on a radio that cannot advertise. */
     private val ftms by lazy { Ftms(this) }
     private val voice by lazy { CoachVoice(this) }
-    private val nas by lazy { NasCopy(this, cfg) }
+    private val nas by lazy { NasCopy(this, cfg) { routes.acceptNas(it) } }
     private val coach = Coach()
 
     @Volatile private var running = false
@@ -1374,6 +1374,7 @@ class MainActivity : Activity() {
         @JavascriptInterface fun nasSetup(password: String) { nas.setUp(password) }
         @JavascriptInterface fun nasStatus(): String = nas.status()
         @JavascriptInterface fun nasSendNow() { nas.sendPending() }
+        @JavascriptInterface fun nasFetchRoutes() { nas.fetchRoutes() }
         @JavascriptInterface fun nasCheck() { nas.check() }
         @JavascriptInterface fun nasForget() { nas.forget() }
 
@@ -2616,8 +2617,10 @@ class MainActivity : Activity() {
         } catch (e: Exception) {
             Log.w(TAG, "fit: could not list the backlog", e)
         }
-        // Copies a sleeping NAS turned away last time.
+        // Copies a sleeping NAS turned away last time, then any routes added
+        // to its routes/ folder since the last start.
         nas.sendPending()
+        nas.fetchRoutes()
 
         val ui = chosenUi()
         Log.i(TAG, "ui: $ui (available: ${available().joinToString(", ")})")

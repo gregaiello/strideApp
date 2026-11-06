@@ -38,7 +38,9 @@ class Routes(context: Context) {
             Log.w(TAG, "cache unreadable (${e.message})")
             "[]"
         }
-        Log.i(TAG, "loaded ${count()} route(s) from disk")
+        // Not count(): that includes the NAS list, declared below and so not
+        // initialised yet when this block runs.
+        Log.i(TAG, "loaded ${try { JSONArray(raw).length() } catch (e: Exception) { 0 }} route(s) from disk")
     }
 
     /**
@@ -68,10 +70,40 @@ class Routes(context: Context) {
         }
     }
 
-    /** The array as it will be handed to the UI. */
-    fun json(): String = raw
+    /*
+     * Fork-only: routes converted from GPX files in the NAS's routes/ folder
+     * (NasCopy.fetchRoutes). Kept in their own file and list rather than
+     * merged into [raw], because a phone sync replaces [raw] wholesale and
+     * would otherwise wipe them, and a NAS fetch must not wipe the phone's.
+     */
+    private val nasFile = File(context.filesDir, "routes_nas.json")
 
-    fun count(): Int = try { JSONArray(raw).length() } catch (e: Exception) { 0 }
+    @Volatile
+    private var nasRaw: String = try {
+        if (nasFile.exists()) nasFile.readText() else "[]"
+    } catch (e: Exception) { "[]" }
+
+    /** The NAS's set, replacing the last one. Same keep-the-good-copy rule as [accept]. */
+    fun acceptNas(routes: JSONArray) {
+        nasRaw = routes.toString()
+        try {
+            nasFile.writeText(nasRaw)
+        } catch (e: Exception) {
+            Log.w(TAG, "cannot write NAS route cache (${e.message})")
+        }
+        Log.i(TAG, "cached ${routes.length()} route(s) from the NAS")
+    }
+
+    /** The array as it will be handed to the UI: the phone's, then the NAS's. */
+    fun json(): String {
+        val nas = try { JSONArray(nasRaw) } catch (e: Exception) { JSONArray() }
+        if (nas.length() == 0) return raw
+        val all = try { JSONArray(raw) } catch (e: Exception) { JSONArray() }
+        for (i in 0 until nas.length()) all.put(nas.get(i))
+        return all.toString()
+    }
+
+    fun count(): Int = try { JSONArray(json()).length() } catch (e: Exception) { 0 }
 
     /**
      * One route by id, or null.
@@ -82,7 +114,7 @@ class Routes(context: Context) {
      */
     fun byId(id: String): Route? {
         try {
-            val arr = JSONArray(raw)
+            val arr = JSONArray(json())
             for (i in 0 until arr.length()) {
                 val o = arr.getJSONObject(i)
                 if (o.optString("id") != id) continue

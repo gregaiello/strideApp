@@ -197,6 +197,15 @@ key and only trusts the NAS it first met. A walk the NAS misses waits and is
 sent after the next one, or with SEND NOW. On a Synology, enable SSH, SFTP and
 the user home service first.
 
+**Routes from the NAS.** Once the NAS is set up, STRIDE makes a `routes`
+folder next to the walkers' folders. Every `.gpx` you put there becomes a
+route under My routes, and the deck follows its hills by distance walked. It is
+fetched at start-up and with FETCH in My routes. The file needs elevation:
+Strava (⋯ → Export GPX), Garmin and Komoot exports have it, and a file without
+it is listed as skipped rather than walked flat. Heights are smoothed so GPS
+noise does not become ramps, and the board's own incline limits still apply.
+Delete the file on the NAS to remove the route.
+
 **Resetting settings** (About → Reset every setting) asks for the PIN
 **1235**. It's the same everywhere and only there so a stray tap can't wipe the
 setup; people, totals and history are kept either way.

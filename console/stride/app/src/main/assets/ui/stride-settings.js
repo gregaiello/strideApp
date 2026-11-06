@@ -1289,8 +1289,9 @@
   function paneRoutes(pane) {
     var sc = head(pane, 'My routes',
       'Walks you have already done outdoors, converted into ground this ' +
-      'treadmill can walk. They arrive from the STRIDE Health app on your ' +
-      'phone and are kept on the console, so they work with the network down.');
+      'treadmill can walk. They arrive as GPX files from your NAS or from the ' +
+      'STRIDE Health app on your phone, and are kept on the console, so they ' +
+      'work with the network down.');
 
     /* Live, because routes arrive while you are looking at this.
        `rebuild()` runs once per `open()` and builds all nine panes together, so
@@ -1307,10 +1308,11 @@
        unchanged pane must cost one bridge call and no DOM work, or a rebuild
        every 1.2 s would fight the scroll position under your finger. */
     var seen = raw;
+    var drawNasLine = function () {};
     pane.sxTick = function () {
       var now = '[]';
       try { now = bridge().routes() || '[]'; } catch (e) {}
-      if (now === seen) return;
+      if (now === seen) { drawNasLine(); return; }
       var wasOpen = pane.classList.contains('sx-on');
       pane.innerHTML = '';
       paneRoutes(pane);
@@ -1319,35 +1321,71 @@
 
     var routes = [];
     try { routes = JSON.parse(raw); } catch (e) { routes = []; }
+    var nasRoutes = has('nasFetchRoutes');
 
     if (!routes.length) {
       var g0 = group('');
       g0.appendChild(row('No routes yet',
-        'Open STRIDE Health on your phone, go to Workouts & Routes, convert an ' +
-        'outdoor walk and keep it. It arrives here on the next sync.',
+        nasRoutes ? 'Put .gpx files with elevation in the routes folder on your NAS, ' +
+          'below, or convert an outdoor walk in STRIDE Health on your phone.'
+        : 'Open STRIDE Health on your phone, go to Workouts & Routes, convert an ' +
+          'outdoor walk and keep it. It arrives here on the next sync.',
         el('div', 'sx-ro', '—')));
       sc.appendChild(g0);
-      return;
+    } else {
+      var g = group(routes.length + (routes.length === 1 ? ' route' : ' routes'));
+      routes.forEach(function (r) {
+        var km = ((r.distance_m || 0) / 1000).toFixed(2);
+        var climb = Math.round(r.climb_m || 0);
+        var changes = (r.segments || []).length;
+        var desc = km + ' km · ' + climb + ' m of climb · ' + changes +
+                   ' incline changes';
+        if (r.difficulty && r.difficulty !== 1) {
+          desc += ' · at ' + Math.round(r.difficulty * 100) + '%';
+        }
+        if (r.source === 'nas') desc += ' · from the NAS';
+        g.appendChild(row(r.name || 'Route', desc,
+          el('div', 'sx-ro', spark(r))));
+      });
+      sc.appendChild(g);
     }
 
-    var g = group(routes.length + (routes.length === 1 ? ' route' : ' routes'));
-    routes.forEach(function (r) {
-      var km = ((r.distance_m || 0) / 1000).toFixed(2);
-      var climb = Math.round(r.climb_m || 0);
-      var changes = (r.segments || []).length;
-      var desc = km + ' km · ' + climb + ' m of climb · ' + changes +
-                 ' incline changes';
-      if (r.difficulty && r.difficulty !== 1) {
-        desc += ' · at ' + Math.round(r.difficulty * 100) + '%';
-      }
-      g.appendChild(row(r.name || 'Route', desc,
-        el('div', 'sx-ro', spark(r))));
-    });
-    sc.appendChild(g);
-
     var g2 = group('Where they come from');
+    /* Fork-only: GPX files from the NAS (NasCopy.fetchRoutes). Fetched at
+       start-up and on FETCH; the line below says what was found and why any
+       file was skipped, because a GPX without heights looks fine in a file
+       browser and silently flat on a treadmill would be worse. */
+    if (nasRoutes) {
+      var line = el('div', 'sx-state', '');
+      line.style.cssText = 'display:flex;align-items:center;margin-top:12px;line-height:1.35';
+      var fetchBtn = press(el('button', 'sx-pill sx-go', 'FETCH'), function () {
+        try { bridge().nasFetchRoutes(); } catch (e) {}
+        lineWas = ''; setTimeout(drawNasLine, 300);
+      });
+      var nasRow = row('From your NAS',
+        'Every .gpx in the routes folder next to your walks becomes a route. ' +
+        'It needs elevation: Strava, Garmin and Komoot exports have it. ' +
+        'Delete a file there to remove its route.', fetchBtn);
+      nasRow.querySelector('.sx-lbl').appendChild(line);
+      g2.appendChild(nasRow);
+      var lineWas = '';
+      drawNasLine = function () {
+        var st = {};
+        try { st = JSON.parse(bridge().nasStatus()); } catch (e) {}
+        var text = !st.configured ? 'Set up Copy to NAS first, under Treadmill.'
+          : (st.routesMessage || 'Not fetched yet.');
+        var dot = !st.configured ? '' : st.routesState === 'ok' ? 'sx-ok'
+          : st.routesState === 'error' ? 'sx-bad' : st.routesState === 'working' ? 'sx-busy' : '';
+        var key = dot + text;
+        if (key === lineWas) return;
+        lineWas = key;
+        line.innerHTML = '<i class="sx-dot ' + dot + '"></i>' + String(text).replace(/</g, '&lt;');
+        fetchBtn.style.display = st.configured ? '' : 'none';
+      };
+      drawNasLine();
+    }
     g2.appendChild(row('Home Assistant',
-      'Routes ride the same webhook as your health data and are cached here. ' +
+      'Phone routes ride the same webhook as your health data and are cached here. ' +
       'Delete or rename them on the phone; this console follows.',
       el('div', 'sx-ro', S.ha_enabled ? 'connected' : 'not configured')));
     sc.appendChild(g2);

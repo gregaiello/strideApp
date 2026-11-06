@@ -37,12 +37,21 @@ import java.util.concurrent.Executors
  * again after the next walk, at start-up, or from SEND NOW in Settings. The
  * .fit itself stays on the console either way, where `adb pull` still finds it.
  */
-class NasCopy(private val ctx: Context, private val cfg: Settings) {
+class NasCopy(
+    private val ctx: Context,
+    private val cfg: Settings,
+    /** Every converted route from the NAS's routes/ folder, after each fetch. */
+    private val onRoutes: (org.json.JSONArray) -> Unit = {},
+) {
 
     companion object {
         private const val TAG = "Stride"
         private const val CONNECT_MS = 8000
         private const val KEY_COMMENT = "stride@treadmill"
+        /** Next to the walkers' folders: `<base>/routes/`, holding .gpx files. */
+        const val ROUTES_DIR = "routes"
+        /** A walk's GPX is well under a megabyte; past this it is not a route. */
+        private const val MAX_GPX_BYTES = 20L * 1024 * 1024
     }
 
     private val dir = File(ctx.filesDir, "nas").apply { mkdirs() }
@@ -51,11 +60,15 @@ class NasCopy(private val ctx: Context, private val cfg: Settings) {
     /** "type base64key" of the NAS as first seen at setup. */
     private val hostKeyFile = File(dir, "host_key")
     private val pendingDir = File(dir, "pending").apply { mkdirs() }
+    /** Local copies of the NAS's GPX files, so a fetch only downloads what changed. */
+    private val gpxDir = File(dir, "routes").apply { mkdirs() }
     private val worker = Executors.newSingleThreadExecutor()
 
     @Volatile private var state = "idle"      // idle | working | ok | error
     @Volatile private var message = ""
     @Volatile private var lastSent = ""
+    @Volatile private var routesState = "idle"
+    @Volatile private var routesMessage = ""
 
     fun configured(): Boolean =
         cfg.nasHost().isNotEmpty() && cfg.nasUser().isNotEmpty() &&
@@ -84,6 +97,8 @@ class NasCopy(private val ctx: Context, private val cfg: Settings) {
         .put("message", message)
         .put("pending", pendingCount())
         .put("lastSent", lastSent)
+        .put("routesState", routesState)
+        .put("routesMessage", routesMessage)
         .toString()
 
     /**
@@ -206,9 +221,80 @@ class NasCopy(private val ctx: Context, private val cfg: Settings) {
                 state = "ok"; message = "Ready"
                 Log.i(TAG, "nas: set up ${cfg.nasUser()}@${cfg.nasHost()}:${cfg.nasPort()}")
                 drain()
+                fetchRoutes()
             } catch (e: Exception) {
                 state = "error"; message = explain(e)
                 Log.w(TAG, "nas: setup failed: ${e.message}")
+            }
+        }
+    }
+
+    /**
+     * Routes from the NAS: every `.gpx` in `<base>/routes/`, converted on the
+     * console by [GpxRoute] and handed to [onRoutes].
+     *
+     * The folder is created if missing, so after the first fetch it is there
+     * to be found next to the walkers' folders. Only files whose size or date
+     * changed are downloaded; ones gone from the NAS are dropped here too, so
+     * deleting a file on the NAS removes the route. With the NAS unreachable
+     * nothing changes: the last converted set stays, as phone routes do.
+     */
+    fun fetchRoutes() {
+        worker.execute {
+            if (!configured()) { routesState = "idle"; routesMessage = ""; return@execute }
+            routesState = "working"; routesMessage = "Looking in the NAS's routes folder…"
+            try {
+                val folder = withSftp { sftp ->
+                    val remote = "${baseOf(sftp)}/$ROUTES_DIR"
+                    mkdirQuiet(sftp, remote)
+                    @Suppress("UNCHECKED_CAST")
+                    val entries = (sftp.ls(remote) as java.util.Vector<ChannelSftp.LsEntry>)
+                        .filter { !it.attrs.isDir && it.filename.endsWith(".gpx", true) }
+                    val wanted = entries.map { it.filename }.toSet()
+                    gpxDir.listFiles()?.forEach { if (it.name !in wanted) it.delete() }
+                    for (e in entries) {
+                        if (e.attrs.size > MAX_GPX_BYTES) continue
+                        val local = File(gpxDir, e.filename)
+                        val stamp = e.attrs.mTime * 1000L
+                        if (local.exists() && local.length() == e.attrs.size &&
+                            local.lastModified() == stamp) continue
+                        val part = File(gpxDir, e.filename + ".part")
+                        part.outputStream().use { sftp.get("$remote/${e.filename}", it) }
+                        local.delete(); part.renameTo(local)
+                        local.setLastModified(stamp)
+                        Log.i(TAG, "nas: fetched route ${e.filename}")
+                    }
+                    remote
+                }
+                val out = org.json.JSONArray()
+                val skipped = ArrayList<String>()
+                gpxDir.listFiles { f -> f.name.endsWith(".gpx", true) }
+                    ?.sortedBy { it.name.lowercase() }
+                    ?.forEach { f ->
+                        val r = try {
+                            GpxRoute.convert(f.readText(), f.name)
+                        } catch (e: Exception) {
+                            GpxRoute.Result.Skip("could not be read")
+                        }
+                        when (r) {
+                            is GpxRoute.Result.Ok -> out.put(r.route)
+                            is GpxRoute.Result.Skip -> {
+                                skipped.add("${f.name}: ${r.why}")
+                                Log.w(TAG, "nas: route ${f.name} skipped (${r.why})")
+                            }
+                        }
+                    }
+                onRoutes(out)
+                routesState = if (skipped.isEmpty()) "ok" else "error"
+                routesMessage = when {
+                    out.length() == 0 && skipped.isEmpty() ->
+                        "No .gpx files yet. Put them in $folder"
+                    else -> "${out.length()} route(s) from $folder" +
+                        if (skipped.isEmpty()) "" else " · skipped ${skipped.joinToString("; ")}"
+                }
+            } catch (e: Exception) {
+                routesState = "error"; routesMessage = explain(e)
+                Log.w(TAG, "nas: route fetch failed: ${e.message}")
             }
         }
     }
@@ -388,9 +474,9 @@ class NasCopy(private val ctx: Context, private val cfg: Settings) {
         override fun getHostKey(host: String?, type: String?): Array<com.jcraft.jsch.HostKey> = emptyArray()
     }
 
-    /** Answers JSch's keyboard-interactive prompt with the setup password. */
     /**
-     * Gives the password once per method, then gives up. Answering "yes" every
+     * Answers JSch's password and keyboard-interactive prompts with the setup
+     * password, once per method, then gives up. Answering "yes" every
      * time JSch asks made a wrong password loop until OpenSSH hit MaxAuthTries
      * and hung up with "Too many authentication failures" (seen on the real
      * NAS, OpenSSH 10.0, after SET UP was pressed a second time with the box
