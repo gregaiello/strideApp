@@ -61,8 +61,10 @@
     '.sx-rail{position:relative;z-index:2;flex:none;width:302px;height:100%;',
     '  border-right:1px solid rgb(var(--sx-line));padding:26px 0 0;display:flex;flex-direction:column}',
     '.sx-title{padding:0 30px 22px;font-size:34px;font-weight:200;letter-spacing:.02em}',
+    /* 56px rather than 66: a tenth section (Headphones) has to fit above
+       CLOSE, and the rail hides overflow rather than scroll. */
     '.sx-navs{flex:1;overflow:hidden}',
-    '.sx-nav{display:flex;align-items:center;width:100%;height:66px;padding:0 30px;',
+    '.sx-nav{display:flex;align-items:center;width:100%;height:56px;padding:0 30px;',
     '  background:none;border:none;color:var(--sx-dim);font-size:19px;font-weight:300;',
     '  text-align:left;border-left:3px solid transparent}',
     '.sx-nav .sx-ic{width:26px;height:26px;flex:none;opacity:.75;margin-right:16px}',
@@ -126,7 +128,8 @@
     '.sx-fld:focus{border-color:rgb(var(--sx-acc))}',
 
     '.sx-pill{height:56px;padding:0 26px;border-radius:16px;background:rgba(var(--sx-surf),.5);',
-    '  border:2px solid rgb(var(--sx-line));color:var(--sx-ink);font-size:16px;letter-spacing:.1em}',
+    '  border:2px solid rgb(var(--sx-line));color:var(--sx-ink);font-size:16px;letter-spacing:.1em;',
+    '  flex:none;white-space:nowrap}',
     '.sx-pill.sx-down{transform:scale(.98);background:rgba(var(--sx-acc),.2)}',
     '.sx-pill.sx-go{border-color:rgb(var(--sx-acc));background:rgba(var(--sx-acc),.16)}',
     '.sx-pill.sx-warn{border-color:rgb(var(--sx-alert));color:var(--sx-alert-ink)}',
@@ -370,6 +373,7 @@
      the password itself — Settings.json() sends `mqtt_pass_set` instead — so
      this is a statement that one exists, never the thing itself. */
   var SECRET_MASK = '••••••••';
+  var RESET_PIN = '1235';   // see paneAbout: a speed bump, not a secret
 
   function field(key, value, short, type) {
     var f = el('input', 'sx-fld' + (short ? ' sx-short' : ''));
@@ -541,6 +545,7 @@
   var ICONS = {
     people: 'M12 12a5 5 0 100-10 5 5 0 000 10zm-9 9a9 9 0 0118 0',
     hr: 'M12 21s-8-5.4-8-11a4.5 4.5 0 018-2.8A4.5 4.5 0 0120 10c0 5.6-8 11-8 11z',
+    hp: 'M4 15v-3a8 8 0 0116 0v3M4 15h3v6H4zM17 15h3v6h-3z',
     ha: 'M3 11l9-8 9 8M5 10v10h14V10',
     deck: 'M3 17h18M6 17l3-9h6l3 9M9 8V5h6v3',
     coach: 'M4 5h16v11H9l-5 4V5z',
@@ -553,6 +558,7 @@
   var SECTIONS = [
     ['people', 'Who walks',      paneWho],
     ['hr',     'Heart rate',     paneHeart],
+    ['hp',     'Headphones',     paneHeadphones],
     ['ha',     'Home Assistant', paneHa],
     ['deck',   'Treadmill',      paneDeck],
     ['routes', 'My routes',      paneRoutes],
@@ -838,6 +844,113 @@
     pane.sxTick = drawPaired;   // live bpm while this section is open
   }
 
+  // --- headphones (fork-only; see Headphones.kt) ---
+  /* Pairing lives here because the console's own Bluetooth screen is out of
+     reach. Once connected, Android sends every app's sound to them; nothing
+     on this page picks an app. */
+  function paneHeadphones(pane) {
+    var sc = head(pane, 'Headphones',
+      'Bluetooth headphones for YouTube, Netflix and the coach. Once connected, every ' +
+      'sound the console makes plays in them instead of the speakers.');
+    if (!has('hpStatus')) {
+      sc.appendChild(el('div', 'sx-empty', 'This build has no headphone support.'));
+      return;
+    }
+
+    var g = group('Your headphones');
+    var pairedBox = el('div');
+    g.appendChild(pairedBox);
+    sc.appendChild(g);
+
+    var g2 = group('Add headphones');
+    var searchBtn = press(el('button', 'sx-pill sx-go', 'SEARCH'), function () {
+      searchBtn.textContent = 'SEARCHING';
+      foundBox.innerHTML = '<div class="sx-empty"><span class="sx-state">' +
+        '<i class="sx-dot sx-busy"></i>Looking for headphones…</span></div>';
+      try { bridge().hpSearch(); } catch (e) {}
+      // Classic discovery reports as it goes; show what it has so far.
+      [4000, 8000, 12000, 16000].forEach(function (t) { setTimeout(drawFound, t); });
+    });
+    g2.appendChild(row('Search',
+      'Put them in pairing mode first: usually hold the power button until the light ' +
+      'flashes blue and red, or see their manual.', searchBtn));
+    var foundBox = el('div');
+    g2.appendChild(foundBox);
+    sc.appendChild(g2);
+
+    function esc(t) { return String(t).replace(/&/g, '&amp;').replace(/</g, '&lt;'); }
+
+    function drawFound() {
+      var st = {};
+      try { st = JSON.parse(bridge().hpStatus()); } catch (e) {}
+      var list = [];
+      try { list = JSON.parse(bridge().hpFound()); } catch (e) {}
+      if (!st.searching) searchBtn.textContent = 'SEARCH AGAIN';
+      if (!list.length) {
+        if (st.searching) return;   // keep the "looking" line until it ends
+        foundBox.innerHTML = '';
+        foundBox.appendChild(el('div', 'sx-empty',
+          'No headphones found.<br>Check they are in pairing mode, close to the console, ' +
+          'and not connected to a phone.'));
+        return;
+      }
+      foundBox.innerHTML = '';
+      list.forEach(function (d) {
+        var r = el('div', 'sx-dev');
+        r.innerHTML = '<div class="sx-dn"><div class="sx-n">' + esc(d.name) +
+          '</div><div class="sx-d">' + (d.bonded ? 'Already paired with this console' :
+          'Ready to pair') + ' · ' + d.address.slice(0, 8) + '</div></div>';
+        r.appendChild(press(el('button', 'sx-pill sx-go', d.bonded ? 'USE' : 'PAIR'), function () {
+          try { bridge().hpPair(d.address, d.name); } catch (e) {}
+          foundBox.innerHTML = '';
+          searchBtn.textContent = 'SEARCH';
+          load(); was = ''; setTimeout(drawPaired, 300);
+        }));
+        foundBox.appendChild(r);
+      });
+    }
+
+    var was = '';
+    function drawPaired() {
+      var st = {};
+      try { st = JSON.parse(bridge().hpStatus()); } catch (e) {}
+      var key = [st.available, st.address, st.connected, st.note].join('|');
+      if (key === was) return;   // redrawn only on change, so a press is never lost
+      was = key;
+      pairedBox.innerHTML = '';
+      if (!st.available) {
+        pairedBox.appendChild(el('div', 'sx-empty', 'Bluetooth is off, or this console has none.'));
+        return;
+      }
+      if (!st.address) {
+        pairedBox.appendChild(el('div', 'sx-empty',
+          'None paired.<br>The console\'s speakers play everything.'));
+        return;
+      }
+      var r = el('div', 'sx-dev' + (st.connected ? ' sx-on' : ''));
+      var line = st.note || (st.connected ? 'Connected · sound plays here'
+        : 'Not connected · the speakers play');
+      var dot = st.connected ? 'sx-ok' : /…$/.test(st.note || '') ? 'sx-busy'
+        : st.note ? 'sx-bad' : '';
+      r.innerHTML = '<div class="sx-dn"><div class="sx-n">' + esc(st.name || 'Headphones') +
+        '</div><div class="sx-d"><span class="sx-state"><i class="sx-dot ' + dot + '"></i>' +
+        esc(line) + '</span></div></div>';
+      r.appendChild(press(el('button', 'sx-pill', st.connected ? 'DISCONNECT' : 'CONNECT'),
+        function () {
+          try { st.connected ? bridge().hpDisconnect() : bridge().hpConnect(); } catch (e) {}
+          was = ''; setTimeout(drawPaired, 300);
+        }));
+      r.appendChild(press(el('button', 'sx-pill sx-warn', 'FORGET'), function () {
+        try { bridge().hpForget(); } catch (e) {}
+        load(); was = ''; setTimeout(drawPaired, 300);
+      }));
+      pairedBox.appendChild(r);
+    }
+
+    drawPaired();
+    pane.sxTick = drawPaired;
+  }
+
   // --- home assistant ---
   function paneHa(pane) {
     var sc = head(pane, 'Home Assistant',
@@ -931,6 +1044,88 @@
         save('fit_identity', on ? 'barometric' : 'generic');
       })));
     sc.appendChild(g5);
+
+    /* Copy to NAS (fork-only; see NasCopy.kt). Set up once for the console:
+       every walker shares the one NAS login, and each gets a folder named
+       after them. The password box is never saved; it goes to nasSetup once
+       and is cleared, and STRIDE logs in with its own key from then on. */
+    if (!has('nasStatus')) return;
+    var g6 = group('Copy to NAS');
+    g6.appendChild(row('NAS address',
+      'Its IP, or its name on your network (not a .local name). SSH has to be on.',
+      field('nas_host', S.nas_host)));
+    g6.appendChild(row('Port', '22 unless you changed it.',
+      field('nas_port', S.nas_port || 22, true)));
+    g6.appendChild(row('User', 'The NAS account the files belong to.',
+      field('nas_user', S.nas_user)));
+    g6.appendChild(row('Folder',
+      "Blank: the account's home. Each walker gets a folder in it, named after them.",
+      field('nas_dir', S.nas_dir)));
+    var pw = field('nas_setup_pw', '', false, 'password');
+    pw.sxCommit = function () {};   // kept in the box for SET UP, never saved
+    g6.appendChild(row('Password', "Used once, to give the NAS STRIDE's own key. Not kept.", pw));
+
+    // CHECK answers in a sentence ("Found 192.168.1.20 · SSH answers …"),
+    // longer than the one-word states the other rows show. Beside the buttons
+    // it made the control ~900px wide, and since a row's control never
+    // shrinks, the description was squeezed into a one-word column. Under the
+    // description it gets the label's full width instead.
+    var nasState = el('div', 'sx-state', '');
+    nasState.style.cssText = 'display:flex;align-items:center;margin-top:12px;line-height:1.35';
+    var nasWrap = el('div');
+    nasWrap.style.cssText = 'display:flex;align-items:center';
+    var checkBtn = press(el('button', 'sx-pill', 'CHECK'), function () {
+      try { bridge().nasCheck(); } catch (e) {}
+      drawNas();
+    });
+    checkBtn.style.marginRight = '12px';
+    nasWrap.appendChild(checkBtn);
+    nasWrap.appendChild(press(el('button', 'sx-pill', 'SET UP'), function () {
+      try { bridge().nasSetup(pw.value); } catch (e) {}
+      pw.value = '';
+      drawNas();
+    }));
+    var connectRow = row('Connect',
+      'CHECK finds the NAS and its SSH without the password. SET UP runs once, with it.',
+      nasWrap);
+    connectRow.querySelector('.sx-lbl').appendChild(nasState);
+    g6.appendChild(connectRow);
+
+    var sendWrap = el('div');
+    sendWrap.style.cssText = 'display:flex;align-items:center';
+    sendWrap.appendChild(press(el('button', 'sx-pill', 'SEND NOW'), function () {
+      try { bridge().nasSendNow(); } catch (e) {}
+      setTimeout(drawNas, 300);
+    }));
+    var forget = press(el('button', 'sx-pill sx-warn', 'FORGET'), function () {
+      try { bridge().nasForget(); } catch (e) {}
+      drawNas();
+    });
+    forget.style.marginLeft = '12px';
+    sendWrap.appendChild(forget);
+    var sendRow = row('Waiting to copy', 'Walks the NAS missed are tried again after the next one.',
+      sendWrap);
+    g6.appendChild(sendRow);
+    sc.appendChild(g6);
+
+    var nasWas = '';
+    function drawNas() {
+      var st = {};
+      try { st = JSON.parse(bridge().nasStatus()); } catch (e) {}
+      var dot = st.state === 'ok' ? 'sx-ok' : st.state === 'error' ? 'sx-bad'
+              : st.state === 'working' ? 'sx-busy' : '';
+      var text = st.message || (st.configured ? 'Ready' : 'Not set up');
+      var key = dot + text + st.pending;
+      if (key === nasWas) return;   // redrawn only on change, like the grant row
+      nasWas = key;
+      nasState.innerHTML = '<i class="sx-dot ' + dot + '"></i>' +
+        String(text).replace(/</g, '&lt;');
+      sendRow.style.display = st.configured ? '' : 'none';
+      sendWrap.firstChild.textContent = 'SEND NOW' + (st.pending ? ' (' + st.pending + ')' : '');
+    }
+    drawNas();
+    var prevTick = pane.sxTick;
+    pane.sxTick = function () { if (prevTick) prevTick(); drawNas(); };
   }
 
   // --- coach ---
@@ -1190,13 +1385,34 @@
     g.appendChild(row('Console', '', el('div', 'sx-ro', 'Android ' + a.android)));
     sc.appendChild(g);
 
+    /* The PIN is a speed bump, not security: it is the same on every console
+       and sits in this file. It is there so a curious guest, or a tap meant
+       for something else, cannot wipe the NAS, broker and coach setup that
+       took an evening to get right. */
     var g2 = group('Starting over');
-    g2.appendChild(row('Reset every setting',
-      'People, totals and history are kept. Only settings go back to defaults.',
-      press(el('button', 'sx-pill sx-warn', 'RESET'), function () {
-        try { S = JSON.parse(bridge().resetSettings()); } catch (e) {}
-        rebuild();
-      })));
+    var pin = field('reset_pin', '', true, 'password');
+    pin.sxCommit = function () {};   // checked by RESET, never saved
+    var resetWrap = el('div');
+    resetWrap.style.cssText = 'display:flex;align-items:center';
+    resetWrap.appendChild(pin);
+    var resetBtn = press(el('button', 'sx-pill sx-warn', 'RESET'), function () {
+      if (pin.value !== RESET_PIN) {
+        pin.value = '';
+        resetMsg.innerHTML = '<i class="sx-dot sx-bad"></i>Wrong PIN. Nothing was changed.';
+        return;
+      }
+      try { S = JSON.parse(bridge().resetSettings()); } catch (e) {}
+      rebuild();
+    });
+    resetBtn.style.marginLeft = '12px';
+    resetWrap.appendChild(resetBtn);
+    var resetMsg = el('div', 'sx-state', '');
+    resetMsg.style.cssText = 'display:flex;align-items:center;margin-top:12px';
+    var resetRow = row('Reset every setting',
+      'Type the PIN, then RESET. People, totals and history are kept. Only settings ' +
+      'go back to defaults.', resetWrap);
+    resetRow.querySelector('.sx-lbl').appendChild(resetMsg);
+    g2.appendChild(resetRow);
     sc.appendChild(g2);
   }
 

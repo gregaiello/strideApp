@@ -80,6 +80,10 @@ class Settings(context: Context) {
         const val HR_ADDR = "hr_addr"
         const val HR_NAME = "hr_name"
 
+        // --- headphones (fork-only; see Headphones.kt) ---
+        const val HP_ADDR = "hp_addr"
+        const val HP_NAME = "hp_name"
+
         // --- display ---
         const val SLEEP_MIN = "sleep_min"
         const val CLOCK_24 = "clock_24"
@@ -91,6 +95,12 @@ class Settings(context: Context) {
         // --- saved walks (fork-only) ---
         /** "barometric" | "generic": the device a .fit claims to come from. */
         const val FIT_IDENTITY = "fit_identity"
+        /** Where NasCopy sends each .fit. The password is never one of these. */
+        const val NAS_HOST = "nas_host"
+        const val NAS_PORT = "nas_port"
+        const val NAS_USER = "nas_user"
+        /** Blank = the NAS account's home; relative = inside it; /absolute as is. */
+        const val NAS_DIR = "nas_dir"
 
         /**
          * How fast a guided walk may move the deck, as three named presets
@@ -381,6 +391,19 @@ class Settings(context: Context) {
         prefs.edit().remove(HR_ADDR).remove(HR_NAME).apply()
     }
 
+    // --- headphones -----------------------------------------------------------
+
+    fun headphonesAddr(): String = prefs.getString(HP_ADDR, "") ?: ""
+    fun headphonesName(): String = prefs.getString(HP_NAME, "") ?: ""
+
+    fun saveHeadphones(addr: String, name: String) {
+        prefs.edit().putString(HP_ADDR, addr).putString(HP_NAME, name).apply()
+    }
+
+    fun forgetHeadphones() {
+        prefs.edit().remove(HP_ADDR).remove(HP_NAME).apply()
+    }
+
     // --- display --------------------------------------------------------------
 
     fun sleepMs(): Long = prefs.getInt(SLEEP_MIN, 5) * 60_000L
@@ -400,6 +423,11 @@ class Settings(context: Context) {
      * climb for its own map's hills (see FitIdentity.BAROMETRIC).
      */
     fun fitIdentity(): String = prefs.getString(FIT_IDENTITY, "barometric") ?: "barometric"
+
+    fun nasHost(): String = (prefs.getString(NAS_HOST, "") ?: "").trim()
+    fun nasPort(): Int = prefs.getInt(NAS_PORT, 22).takeIf { it in 1..65535 } ?: 22
+    fun nasUser(): String = (prefs.getString(NAS_USER, "") ?: "").trim()
+    fun nasDir(): String = prefs.getString(NAS_DIR, "") ?: ""
 
     fun brightness(): Float = when (prefs.getString(BRIGHTNESS, "normal")) {
         "dim" -> 0.35f
@@ -448,12 +476,18 @@ class Settings(context: Context) {
         .put(HR_SOURCE, hrSource())
         .put(HR_ADDR, hrAddr())
         .put(HR_NAME, hrName())
+        .put(HP_ADDR, headphonesAddr())
+        .put(HP_NAME, headphonesName())
         .put(SLEEP_MIN, prefs.getInt(SLEEP_MIN, 5))
         .put(CLOCK_24, clock24())
         .put(BRIGHTNESS, prefs.getString(BRIGHTNESS, "normal"))
         .put(KEEP_AWAKE, keepAwake())
         .put(SWITCH_APP, switchApp())
         .put(FIT_IDENTITY, fitIdentity())
+        .put(NAS_HOST, nasHost())
+        .put(NAS_PORT, nasPort())
+        .put(NAS_USER, nasUser())
+        .put(NAS_DIR, nasDir())
 
     /**
      * Save one value, typed by what the key expects rather than by what
@@ -468,7 +502,7 @@ class Settings(context: Context) {
             COACH_MILESTONES, CLOCK_24, KEEP_AWAKE ->
                 e.putBoolean(key, value == "true" || value == "1")
 
-            MQTT_PORT, WARMUP_MIN, COOLDOWN_MIN, OPEN_LAP_MIN, SLEEP_MIN ->
+            MQTT_PORT, NAS_PORT, WARMUP_MIN, COOLDOWN_MIN, OPEN_LAP_MIN, SLEEP_MIN ->
                 e.putInt(key, value.toIntOrNull() ?: 0)
 
             WARMUP_KPH ->

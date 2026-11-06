@@ -278,6 +278,20 @@ mv tools/device-state.txt ../device-state.txt</code></pre>
         move it. If the section says STRIDE is not allowed to draw over other apps, tap <b>ALLOW</b>, or from
         the laptop:
 <pre><code>&amp; $adb -s <span class="ipv">CONSOLE-IP</span>:5555 shell appops set dev.stride.hud SYSTEM_ALERT_WINDOW allow</code></pre></li>
+      <li><b>Headphones</b> (optional): put your Bluetooth headphones in pairing mode (not connected to your
+        phone), tap <b>SEARCH</b>, then <b>PAIR</b>. When the line says <i>Connected · sound plays here</i>,
+        every app's sound, the coach included, goes to them. They reconnect on their own next time.
+        <b>FORGET</b> removes them for good.</li>
+      <li><b>Treadmill → Copy to NAS</b> (optional): every .fit is also copied over SFTP to
+        <code>&lt;home&gt;/&lt;your name&gt;/</code> on the NAS. Fill in the NAS address (its IP or its network
+        name, not a <code>.local</code> name), port (22) and user, tap <b>CHECK</b>.
+        <div class="ok">✅ <i>Found 192.168.… · SSH answers (…)</i>.</div>
+        Then type the NAS password and tap <b>SET UP</b>. The password is used once, to install STRIDE's own key,
+        and is not kept.
+        <div class="ok">✅ <i>Ready</i>, and a second <b>CHECK</b> ends in <i>login and folder OK</i>.</div>
+        On a Synology, first turn on SSH (Control Panel → Terminal &amp; SNMP), SFTP (File Services) and the user
+        home service (User &amp; Group → Advanced).</li>
+      <li><b>About → Reset every setting</b> needs the PIN <b>1235</b>. Leave it alone for this test.</li>
     </ul>
     <details><summary>Install YouTube, Netflix and Prime Video (for the switch button)</summary>
       <p>The console has no Play Store, so everything is installed from the laptop. YouTube also needs Google Play
@@ -414,6 +428,8 @@ mkdir $env:USERPROFILE\Documents\stride-fit -Force
 &amp; $adb -s <span class="ipv">CONSOLE-IP</span>:5555 pull /sdcard/Android/data/dev.stride.hud/files/fit/ $env:USERPROFILE\Documents\stride-fit\</code></pre>
     <div class="ok">✅ A file named like <code>2026-11-04_0712_&lt;you&gt;.fit</code> is now in
       <code>Documents\stride-fit\fit\</code> in your user folder.</div>
+    <p>If you set up <b>Copy to NAS</b>, the same file is also in the folder named after you in the NAS account's
+      home, with nothing to copy by hand.</p>
   </section>
 
   <section class="step" data-id="c3">

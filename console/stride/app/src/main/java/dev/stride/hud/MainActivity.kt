@@ -85,6 +85,7 @@ class MainActivity : Activity() {
 
         /** Request code for the location permission a BLE scan needs. */
         const val SCAN_PERMISSION = 1
+        const val HP_PERMISSION = 2
 
         /** How long to wait before answering a securityBlock again. The board
          *  can refuse for a moment while it settles; hammering VerifySecurity
@@ -468,10 +469,12 @@ class MainActivity : Activity() {
        console's radio cannot scan as a central and hold a peripheral link at
        the same time. See HeartRate.seek. */
     private val strap by lazy { HeartRate(this) { ftms.listeners > 0 } }
+    private val headphones by lazy { Headphones(this, cfg) }
     /** The treadmill as a standard Bluetooth fitness machine, for Zwift and
      *  friends. Telemetry only, and silent on a radio that cannot advertise. */
     private val ftms by lazy { Ftms(this) }
     private val voice by lazy { CoachVoice(this) }
+    private val nas by lazy { NasCopy(this, cfg) }
     private val coach = Coach()
 
     @Volatile private var running = false
@@ -1367,6 +1370,13 @@ class MainActivity : Activity() {
             applySetting(key)
         }
 
+        /** The NAS password, used once to install STRIDE's key and then dropped. */
+        @JavascriptInterface fun nasSetup(password: String) { nas.setUp(password) }
+        @JavascriptInterface fun nasStatus(): String = nas.status()
+        @JavascriptInterface fun nasSendNow() { nas.sendPending() }
+        @JavascriptInterface fun nasCheck() { nas.check() }
+        @JavascriptInterface fun nasForget() { nas.forget() }
+
         @JavascriptInterface fun addPerson(name: String): String {
             cfg.addPerson(name)?.let { Log.i(TAG, "settings: added ${it.name} (${it.id})") }
             return cfg.json().toString()
@@ -1440,6 +1450,35 @@ class MainActivity : Activity() {
             cfg.forgetStrap()
             Log.i(TAG, "hr: strap forgotten")
         }
+
+        // --- headphones (fork-only; see Headphones.kt) ---
+        @JavascriptInterface fun hpSearch() {
+            // Classic discovery needs the same location grant as a BLE scan
+            // on Android 9; the answer to the dialog starts it, as for straps.
+            if (ensureScanPermission(HP_PERMISSION)) headphones.search()
+        }
+
+        @JavascriptInterface fun hpFound(): String = JSONArray().apply {
+            headphones.found().forEach {
+                put(JSONObject().put("address", it.address)
+                    .put("name", it.name).put("bonded", it.bonded))
+            }
+        }.toString()
+
+        @JavascriptInterface fun hpPair(address: String, name: String) =
+            runOnUiThread { headphones.pair(address, name) }
+        @JavascriptInterface fun hpConnect() = runOnUiThread { headphones.connect() }
+        @JavascriptInterface fun hpDisconnect() = runOnUiThread { headphones.disconnect() }
+        @JavascriptInterface fun hpForget() = runOnUiThread { headphones.forget() }
+
+        @JavascriptInterface fun hpStatus(): String = JSONObject()
+            .put("available", headphones.available)
+            .put("searching", headphones.searching)
+            .put("connected", headphones.connected())
+            .put("note", headphones.note)
+            .put("name", cfg.headphonesName())
+            .put("address", cfg.headphonesAddr())
+            .toString()
 
         @JavascriptInterface fun hrStatus(): String = JSONObject()
             .put("available", strap.available)
@@ -1695,14 +1734,14 @@ class MainActivity : Activity() {
      * applies — and an empty list is exactly what "no straps here" looks like,
      * which makes it the single most confusing way for this feature to fail.
      */
-    private fun ensureScanPermission(): Boolean {
+    private fun ensureScanPermission(code: Int = SCAN_PERMISSION): Boolean {
         if (android.os.Build.VERSION.SDK_INT < 23) return true
         val perm = android.Manifest.permission.ACCESS_COARSE_LOCATION
         if (checkSelfPermission(perm) == android.content.pm.PackageManager.PERMISSION_GRANTED) {
             return true
         }
-        Log.i(TAG, "hr: asking for location permission so a BLE scan can return results")
-        requestPermissions(arrayOf(perm), SCAN_PERMISSION)
+        Log.i(TAG, "hr: asking for location permission so a Bluetooth search can return results")
+        requestPermissions(arrayOf(perm), code)
         return false
     }
 
@@ -1711,10 +1750,11 @@ class MainActivity : Activity() {
         code: Int, permissions: Array<out String>, results: IntArray
     ) {
         super.onRequestPermissionsResult(code, permissions, results)
-        if (code != SCAN_PERMISSION) return
+        if (code != SCAN_PERMISSION && code != HP_PERMISSION) return
         val granted = results.firstOrNull() ==
             android.content.pm.PackageManager.PERMISSION_GRANTED
-        if (granted) strap.scan()
+        if (granted && code == HP_PERMISSION) headphones.search()
+        else if (granted) strap.scan()
         else Log.w(TAG, "hr: location refused, a BLE scan will find nothing")
     }
 
@@ -2472,7 +2512,10 @@ class MainActivity : Activity() {
     private fun exportFit(rec: File) {
         fitExports.execute {
             try {
-                FitExport.export(rec, fitDir, fitIdentity())?.let { Log.i(TAG, "fit: wrote ${it.name}") }
+                FitExport.export(rec, fitDir, fitIdentity())?.let {
+                    Log.i(TAG, "fit: wrote ${it.name}")
+                    nas.enqueue(it, Recording.read(rec).walker)
+                }
             } catch (e: Exception) {
                 Log.w(TAG, "fit: export failed for ${rec.name}", e)
             }
@@ -2552,6 +2595,9 @@ class MainActivity : Activity() {
         refreshWalkerHrMax()
         applyBrightness()
         applyStrap()
+        // Reconnects headphones left on from the last walk, once the A2DP
+        // proxy is up. Started here rather than on first use so that works.
+        headphones.start()
 
         // Before the page exists, so no walk can have started yet: anything
         // still open on disk was cut off by a kill or a power cut.
@@ -2570,6 +2616,8 @@ class MainActivity : Activity() {
         } catch (e: Exception) {
             Log.w(TAG, "fit: could not list the backlog", e)
         }
+        // Copies a sleeping NAS turned away last time.
+        nas.sendPending()
 
         val ui = chosenUi()
         Log.i(TAG, "ui: $ui (available: ${available().joinToString(", ")})")
@@ -3901,6 +3949,7 @@ class MainActivity : Activity() {
         abandonRecording()
         stopBeltBeforeLeaving()
         ftms.stop()
+        headphones.stop()
         // The button would otherwise outlive the thing it switches back to.
         stopService(Intent(this, SwitchBubble::class.java))
         voice.close()

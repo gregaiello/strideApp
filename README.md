@@ -179,6 +179,28 @@ The console has no Play Store; the [fork guide](docs/stride-fit-test-guide.html)
 refuses to run without it), YouTube, Netflix and Prime Video over adb. Only
 video apps are offered for the button.
 
+**Headphones.** Settings → Headphones pairs Bluetooth headphones from the
+console itself, whose own Bluetooth screen is out of reach. Put them in
+pairing mode, press SEARCH, then PAIR. Once connected, every sound the console
+makes plays in them: YouTube, Netflix, the coach. They reconnect on their own
+when switched on near the treadmill, and FORGET removes them completely.
+Headphones use classic Bluetooth (A2DP), not BLE. Connecting relies on a
+hidden Android 9 call; if a ROM ever refuses it, switching the headphones off
+and on still connects them.
+
+**Copy walks to a NAS.** Settings → Treadmill → Copy to NAS sends every saved
+.fit over SFTP to `<home>/<walker>/` on your NAS. Enter its IP or network name
+(not a `.local` name), port and user, press CHECK to see that it answers, then
+type the password once and press SET UP. STRIDE makes its own key, installs
+it on the NAS and never keeps the password; from then on it logs in with the
+key and only trusts the NAS it first met. A walk the NAS misses waits and is
+sent after the next one, or with SEND NOW. On a Synology, enable SSH, SFTP and
+the user home service first.
+
+**Resetting settings** (About → Reset every setting) asks for the PIN
+**1235**. It's the same everywhere and only there so a stray tap can't wipe the
+setup; people, totals and history are kept either way.
+
 **The Home Assistant side reads one file:**
 
 ```sh

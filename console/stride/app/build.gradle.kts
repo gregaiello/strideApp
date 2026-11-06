@@ -115,8 +115,11 @@ dependencies {
     // Plain Java Paho client — the Android "service" variant needs AndroidX,
     // which this app deliberately avoids.
     implementation("org.eclipse.paho:org.eclipse.paho.client.mqttv3:1.2.5")
+    // Fork-only: SFTP for copying each .fit to a NAS (NasCopy). Pure Java, no
+    // dependencies of its own; the maintained fork of the original JSch.
+    implementation("com.github.mwiede:jsch:0.2.20")
 
-    // Test-only, so the APK still ships with Paho as its one dependency.
+    // Test-only, so the APK still ships with only the two above.
     // org.json is here because android.jar's copy is stubs: on the JVM every
     // method returns null or 0, and a JSON round-trip test would be testing
     // nothing. The real library is the same API the console runs.
