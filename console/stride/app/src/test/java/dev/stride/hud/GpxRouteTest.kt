@@ -90,4 +90,28 @@ class GpxRouteTest {
             .replace("</trk>", "</rte>").replace("<trkseg>", "").replace("</trkseg>", "")
         assertTrue(GpxRoute.convert(text, "r.gpx") is GpxRoute.Result.Ok)
     }
+
+    /** The shape Strava exports: metadata first, then points carrying sensor
+     *  extensions. The real file that crashed the console had 2722 of these. */
+    @Test fun stravaExportWithExtensionsAndMetadata() {
+        val degPerM = 1.0 / 111_195.0
+        val sb = StringBuilder("<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n" +
+            "<gpx creator=\"StravaGPX\" version=\"1.1\" xmlns=\"http://www.topografix.com/GPX/1/1\">\n" +
+            " <metadata>\n  <time>2026-10-31T12:00:11Z</time>\n </metadata>\n" +
+            " <trk>\n  <name>Altst\u00e4tter Berglauf</name>\n  <type>running</type>\n  <trkseg>\n")
+        for (i in 0 until 2722) {
+            val d = i * 3.0
+            sb.append("   <trkpt lat=\"").append(47.0 + d * degPerM).append("\" lon=\"9.5\">\n")
+                .append("    <ele>").append(466.5 + d * 0.08).append("</ele>\n")
+                .append("    <time>2026-10-31T12:00:11Z</time>\n")
+                .append("    <extensions>\n     <power>408</power>\n     <gpxtpx:TrackPointExtension>\n")
+                .append("      <gpxtpx:hr>108</gpxtpx:hr>\n      <gpxtpx:cad>92</gpxtpx:cad>\n")
+                .append("     </gpxtpx:TrackPointExtension>\n    </extensions>\n   </trkpt>\n")
+        }
+        sb.append("  </trkseg>\n </trk>\n</gpx>\n")
+        val route = ok(GpxRoute.convert(sb.toString(), "Altst\u00e4tter_Berglauf_4th.gpx"))
+        assertEquals("Altst\u00e4tter Berglauf", route.getString("name"))
+        assertEquals(8163.0, route.getDouble("distance_m"), 5.0)
+        assertEquals(8.0, route.getJSONArray("segments").getJSONArray(0).getDouble(2), 0.01)
+    }
 }

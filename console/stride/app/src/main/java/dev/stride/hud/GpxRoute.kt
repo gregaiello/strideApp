@@ -29,10 +29,19 @@ import kotlin.math.sqrt
  * deck moves when the ground does and not for every 0.1 % of noise. The board's
  * own limits are applied later, when the route is walked, as for every route.
  *
- * Parsed with regular expressions, not an XML parser, so it runs in a plain JVM
- * unit test (android.jar's XmlPullParser is a stub there). GPX points are
+ * Parsed by hand, not with an XML parser, so it runs in a plain JVM unit test
+ * (android.jar's XmlPullParser is a stub there). GPX points are
  * `<trkpt lat lon>` or `<rtept lat lon>` with an optional `<ele>`, and that is
  * all this reads.
+ *
+ * **Tags are found with indexOf, and regexes only ever see one point.** The
+ * first version matched `<trk>(.*?)</trk>` to find the name: harmless on the
+ * JVM, but Android's ICU regex keeps a backtracking frame per character of a
+ * lazy match, and across an 825 KB Strava export (2722 points with heart
+ * rate, cadence and power) that ran the console out of memory. The low-memory
+ * killer took STRIDE down with Netflix and everything else the instant FETCH
+ * was pressed. GpxRouteTest cannot see this, because it is the JVM's engine,
+ * not ICU's, that runs there; hence the rule rather than a test.
  */
 object GpxRoute {
 
@@ -49,25 +58,15 @@ object GpxRoute {
         data class Skip(val why: String) : Result()
     }
 
-    private val POINT = Regex(
-        "<(trkpt|rtept)\\b([^>]*?)(/>|>(.*?)</\\1>)", RegexOption.DOT_MATCHES_ALL)
     private val LAT = Regex("\\blat\\s*=\\s*[\"']([-+0-9.eE]+)[\"']")
     private val LON = Regex("\\blon\\s*=\\s*[\"']([-+0-9.eE]+)[\"']")
     private val ELE = Regex("<ele>\\s*([-+0-9.eE]+)\\s*</ele>")
-    private val NAME = Regex("<name>\\s*(?:<!\\[CDATA\\[)?(.*?)(?:]]>)?\\s*</name>",
-        RegexOption.DOT_MATCHES_ALL)
 
     private class Pt(val lat: Double, val lon: Double, val ele: Double?)
 
     /** [fileName] names the route when the file does not, and makes its id. */
     fun convert(text: String, fileName: String): Result {
-        val pts = POINT.findAll(text).mapNotNull { m ->
-            val attrs = m.groupValues[2]
-            val lat = LAT.find(attrs)?.groupValues?.get(1)?.toDoubleOrNull()
-            val lon = LON.find(attrs)?.groupValues?.get(1)?.toDoubleOrNull()
-            if (lat == null || lon == null) null
-            else Pt(lat, lon, ELE.find(m.groupValues[4])?.groupValues?.get(1)?.toDoubleOrNull())
-        }.toList()
+        val pts = points(text)
         if (pts.size < 2) return Result.Skip("no track in this file")
         val withEle = pts.filter { it.ele != null }
         // A file with heights on only a few points (some planners add one at
@@ -130,12 +129,56 @@ object GpxRoute {
             .put("segments", segs))
     }
 
-    /** The track's own name if it has one, else the file's metadata name. */
+    /**
+     * Every `<trkpt>` or `<rtept>`, in file order. Each point's body (up to its
+     * closing tag) is a few hundred bytes at most, so the regexes run on that.
+     */
+    private fun points(text: String): List<Pt> {
+        val out = ArrayList<Pt>()
+        for (tag in arrayOf("trkpt", "rtept")) {
+            var i = text.indexOf("<$tag", 0)
+            while (i >= 0) {
+                val after = i + tag.length + 1
+                // "<trkptx" is some other tag; skip it.
+                if (after < text.length && (text[after].isWhitespace() || text[after] == '>' || text[after] == '/')) {
+                    val gt = text.indexOf('>', after)
+                    if (gt < 0) break
+                    val attrs = text.substring(after, gt)
+                    val selfClosed = attrs.endsWith("/")
+                    val bodyEnd = if (selfClosed) gt else text.indexOf("</$tag>", gt).let { if (it < 0) gt else it }
+                    val body = if (selfClosed) "" else text.substring(gt + 1, bodyEnd)
+                    val lat = LAT.find(attrs)?.groupValues?.get(1)?.toDoubleOrNull()
+                    val lon = LON.find(attrs)?.groupValues?.get(1)?.toDoubleOrNull()
+                    if (lat != null && lon != null)
+                        out.add(Pt(lat, lon, ELE.find(body)?.groupValues?.get(1)?.toDoubleOrNull()))
+                    i = text.indexOf("<$tag", bodyEnd)
+                } else {
+                    i = text.indexOf("<$tag", after)
+                }
+            }
+            if (out.isNotEmpty()) break   // a file is a track or a route, not both
+        }
+        return out
+    }
+
+    /**
+     * The track's own name: the first `<name>` after `<trk>` (or `<rte>`) and
+     * before its first point. Failing that, the first `<name>` in the file,
+     * which is the metadata's.
+     */
     private fun nameOf(text: String): String? {
-        val trk = Regex("<(trk|rte)\\b.*?>(.*?)</\\1>", RegexOption.DOT_MATCHES_ALL).find(text)
-        val inTrack = trk?.let { NAME.find(it.groupValues[2]) }?.groupValues?.get(1)
-        val any = inTrack ?: NAME.find(text)?.groupValues?.get(1)
-        return any?.trim()?.let(::unescape)?.takeIf { it.isNotEmpty() }?.take(60)
+        fun nameAt(from: Int, before: Int): String? {
+            val a = text.indexOf("<name>", from)
+            if (a < 0 || a > before) return null
+            val b = text.indexOf("</name>", a)
+            if (b < 0) return null
+            return text.substring(a + 6, b).trim().removePrefix("<![CDATA[").removeSuffix("]]>").trim()
+        }
+        val trk = listOf(text.indexOf("<trk>"), text.indexOf("<trk "), text.indexOf("<rte>"), text.indexOf("<rte "))
+            .filter { it >= 0 }.minOrNull()
+        val firstPt = listOf(text.indexOf("<trkpt"), text.indexOf("<rtept")).filter { it >= 0 }.minOrNull() ?: text.length
+        val name = (if (trk != null) nameAt(trk, firstPt) else null) ?: nameAt(0, firstPt)
+        return name?.let(::unescape)?.takeIf { it.isNotEmpty() }?.take(60)
     }
 
     private fun unescape(s: String) = s.replace("&lt;", "<").replace("&gt;", ">")

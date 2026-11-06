@@ -1393,23 +1393,28 @@
 
   /* The route's own profile as a small inline SVG — the ground it is, rather
      than a number saying how much of it there is. Segments are
-     [startM, endM, incline] triples; the deck runs -3..+12. */
+     [startM, endM, incline] triples; this adds them up into height and scales
+     the line to the route itself. It used to plot the incline on a fixed
+     -3..+12 % scale (the deck it was built on), and a mountain route from the
+     NAS at +19.5 % drew straight out of the box. */
   function spark(r) {
     var segs = r.segments || [];
     if (!segs.length) return '';
     var total = segs[segs.length - 1][1] || 1;
-    var pts = [];
-    for (var i = 0; i <= 40; i++) {
-      var d = i / 40 * total, v = segs[segs.length - 1][2];
-      for (var j = 0; j < segs.length; j++) {
-        if (d < segs[j][1]) { v = segs[j][2]; break; }
-      }
-      pts.push((i / 40 * 120).toFixed(1) + ',' +
-               (34 - (v + 3) / 15 * 30).toFixed(1));
+    var xs = [0], hs = [0], h = 0;
+    for (var j = 0; j < segs.length; j++) {
+      h += (segs[j][1] - segs[j][0]) * segs[j][2] / 100;
+      xs.push(segs[j][1]); hs.push(h);
     }
+    var lo = Math.min.apply(null, hs), hi = Math.max.apply(null, hs);
+    var span = Math.max(hi - lo, 5);   // a flat route stays a flat line, not magnified noise
+    var pts = xs.map(function (x, i) {
+      return (x / total * 120).toFixed(1) + ',' + (33 - (hs[i] - lo) / span * 30).toFixed(1);
+    });
     return '<svg width="120" height="36" viewBox="0 0 120 36" ' +
            'preserveAspectRatio="none"><polyline points="' + pts.join(' ') +
-           '" fill="none" stroke="currentColor" stroke-width="1.5"/></svg>';
+           '" fill="none" stroke="currentColor" stroke-width="1.5" ' +
+           'stroke-linejoin="round"/></svg>';
   }
 
   function paneAbout(pane) {
