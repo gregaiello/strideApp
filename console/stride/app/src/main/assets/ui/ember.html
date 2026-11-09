@@ -23,7 +23,7 @@
        34         status row
        76 – 138   segment header (guided only)
       142 – 410   hero: lap track, elevation profile, or warm-up countdown
-      418 – 504   coach ribbon, docked. Empty band when the coach is silent.
+      418 – 504   empty (was the coach ribbon, removed 2026-11-09)
       514        rule
       526 – 602   telemetry
       664 – 760   control row
@@ -221,21 +221,6 @@ button{font-family:inherit;color:inherit;background:none;border:none;
 #heroWarm .n{position:absolute;left:0;top:226px;width:100%;text-align:center;
              font-size:18px;color:var(--dim)}
 
-/* ---- coach --------------------------------------------------------------- */
-/* Docked in its own band. Never over the hero — that is what it used to do,
-   and what it used to cover was the segment name and the warm-up clock. */
-.coach{
-  position:absolute;left:40px;top:418px;width:1200px;height:86px;
-  background:#191410;border-left:3px solid var(--accent);
-  opacity:0;pointer-events:none;transition:opacity .3s ease;
-}
-.coach.show{opacity:1;pointer-events:auto}
-.coach.down{background:#211a13}
-.coach .w{position:absolute;left:28px;top:18px;font-size:13px;letter-spacing:.24em;color:var(--accent)}
-.coach .x{position:absolute;right:28px;top:18px;font-size:13px;letter-spacing:.22em;color:var(--dim)}
-.coach .t{position:absolute;left:28px;right:28px;top:40px;
-          font-size:26px;font-weight:300;line-height:1.3;overflow:hidden;max-height:44px}
-
 /* ---- telemetry ----------------------------------------------------------- */
 .rule{position:absolute;left:40px;top:514px;width:1200px;height:1px;background:var(--hair)}
 .tele{position:absolute;left:40px;top:526px;width:1200px;display:flex}
@@ -337,15 +322,6 @@ button{font-family:inherit;color:inherit;background:none;border:none;
         font-size:76px;font-weight:200;letter-spacing:-.01em}
 .sum .k{position:absolute;left:0;top:256px;width:1280px;text-align:center;
         font-size:16px;letter-spacing:.28em;color:var(--accent)}
-/* The coach's closing line, in the band between the kicker and the numbers.
-   It carried nothing but `margin-top` until 2026-08-10, and every one of its
-   siblings on this screen is absolutely positioned — so it fell out of the
-   flow they had all left and rendered at 0,0, on top of the headline. Same
-   fault in Cluster, Daylight and Pacer, and only the Original escaped it
-   because its summary is an ordinary flex column. */
-.sum .sumcoach{position:absolute;left:240px;top:290px;width:800px;height:58px;
-               overflow:hidden;text-align:center;
-               font-size:20px;line-height:1.45;color:#c9a227}
 .sum .grid{position:absolute;left:100px;top:360px;width:1080px;display:flex;
            border-top:1px solid var(--line);border-bottom:1px solid var(--line)}
 .sum .grid div.cell{flex:1;padding:34px 0;text-align:center}
@@ -531,11 +507,6 @@ button{font-family:inherit;color:inherit;background:none;border:none;
     <div class="n" id="warmNote">&mdash;</div>
   </div>
 
-  <div class="coach" id="coach">
-    <div class="w">COACH</div>
-    <div class="x">TAP TO DISMISS</div>
-    <div class="t" id="coachText"></div>
-  </div>
 
   <div class="rule"></div>
   <div class="tele">
@@ -576,7 +547,6 @@ button{font-family:inherit;color:inherit;background:none;border:none;
   <div class="sumdate" id="sumDate" hidden>Date unknown: the console clock was not set during this workout.</div>
   <button class="lapspill" id="lapsPill" hidden>LAPS</button>
   <div class="lapsheet" id="lapSheet" hidden><div class="lk">Laps</div><div class="laptable"><table><thead><tr><th>Lap</th><th>Time</th><th>Distance</th><th>Pace</th><th>Avg HR</th><th>Climb</th></tr></thead><tbody id="lapRows"></tbody></table></div><div class="lhint">Tap anywhere to close</div></div>
-  <div class="sumcoach" id="sumCoach"></div>
   <div class="k" id="sumKind">&mdash;</div>
   <div class="grid">
     <div class="cell"><div class="kk">TIME</div><div class="vv" id="sumTime">0:00</div></div>
@@ -623,7 +593,7 @@ button{font-family:inherit;color:inherit;background:none;border:none;
    profile, the setup flow, touch handling — comes from stride-core. */
 const standalone = STRIDE.stub();
 
-/* The coach's suggested pace, so tapping it can take it. */
+/* The plan's suggested pace, so tapping it can take it. */
 let suggestKph = 0;
 const $ = STRIDE.$, tap = STRIDE.tap, mmss = STRIDE.mmss, nf = STRIDE.nf;
 
@@ -820,7 +790,7 @@ tap($('pickCasual'), () => flow.setControl('casual'));
 tap($('pickGuided'), () => { flow.setControl('guided'); renderPlan(); });
 tap($('pickRoutes'), () => { flow.setControl('routes'); renderPlan(); });
 tap($('btnBack'),    () => flow.back());
-/* Tapping the suggestion takes it. Accepting the coach's number used to
+/* Tapping the suggestion takes it. Accepting the plan's number used to
    mean holding + until you reached it. */
 tap($('suggest'), () => { if (suggestKph > 0) Stride.setSpeed(suggestKph); });
 
@@ -887,34 +857,6 @@ STRIDE.stepper($('btnInclineDown'), d => Stride.incline(-d), 0.5, 0.5);
 STRIDE.hold($('btnKeyBack'), 1200, () => Stride.ackDmk(),
             p => { $('keyFill').style.width = (p * 100) + '%'; });
 
-/* ---- coach --------------------------------------------------------------- */
-let coachTimer = null;
-function dismissCoach(){
-  $('coach').classList.remove('show');
-  clearTimeout(coachTimer);
-  Stride.hushCoach();
-}
-tap($('coach'), dismissCoach);
-
-window.coach = function(c){
-  const line = (c && c.line) || '';
-  if (!line) return;
-  /* Only over the walk. The ribbon is docked in the live screen's own band and
-     has no place to be anywhere else — a line that Home Assistant answers a
-     few seconds late, after the belt has stopped, used to land on top of the
-     summary. showScreen already clears it on the way out; this stops one
-     arriving afterwards. The closing line has its own place on the summary and
-     comes down a different road — see sumCoach. */
-  if (shownScreen !== 'scLive') return;
-  $('coachText').textContent = line;
-  $('coach').classList.add('show');
-  clearTimeout(coachTimer);
-  // Long enough to read at a walking pace, and it goes by itself so nobody has
-  // to reach for it mid-stride.
-  coachTimer = setTimeout(() => $('coach').classList.remove('show'),
-                          Math.min(18000, Math.max(9000, 5000 + line.length * 90)));
-};
-
 /* ---- sleep ---------------------------------------------------------------
    The console lives in the room. At rest it should be dark, not a glowing
    slab — which is most of the point of this direction. */
@@ -963,10 +905,7 @@ function showScreen(id){
     STRIDE.resetDerived();
   }
   if (id !== 'scSetup') STRIDE_SETTINGS.close();
-  if (id !== 'scLive'){
-    $('paused').classList.remove('on');
-    $('coach').classList.remove('show');
-  }
+  if (id !== 'scLive') $('paused').classList.remove('on');
   // Changing screen counts as activity, or a finished walk lands on the
   // summary with half an hour of "idle" already banked and dims before it can
   // be read.
@@ -1154,7 +1093,7 @@ function renderLapCell(s){
   const flash = s.lap.flash;
   cell.classList.toggle('flash', flash > 0);
   $('lapK').textContent = flash ? 'Lap ' + flash + ' done'
-                                : 'Lap ' + s.lap.n + ' · ' + nf(s.lap.m) + ' m';
+                                : 'Lap ' + s.lap.n + ' · ' + STRIDE.km(s.lap.m) + ' km';
   $('lapTime').textContent = mmss(s.lap.sec);
   $('lapPace').textContent = paceText(s.lap.sec, s.lap.m);
 }
@@ -1165,7 +1104,7 @@ function renderLapTable(s){
   $('lapsPill').textContent = n + (n === 1 ? ' LAP' : ' LAPS') + ' ›';
   if (!n) $('lapSheet').hidden = true;
   $('lapRows').innerHTML = s.laps.map(l =>
-    '<tr><td>' + l.n + '</td><td>' + mmss(l.sec) + '</td><td>' + nf(l.m) + ' m</td>' +
+    '<tr><td>' + l.n + '</td><td>' + mmss(l.sec) + '</td><td>' + STRIDE.km(l.m) + ' km</td>' +
     '<td>' + (l.paceSecPerKm ? mmss(l.paceSecPerKm) + ' /km' : '—') + '</td>' +
     '<td>' + (l.hr || '—') + '</td><td>' + nf(l.up) + ' m</td></tr>').join('');
   $('sumDate').hidden = !s.dateUnknown;
@@ -1174,7 +1113,6 @@ function renderLapTable(s){
 function renderSummary(s){
   renderLapTable(s);
   $('sumHead').textContent  = 'Nice work, ' + (s.profile || 'you');
-  $('sumCoach').textContent = s.summaryLine || '';
   $('sumKind').textContent  = s.plan.name
     ? (Math.round(s.session.elapsed / 60) + ' minutes of ' + s.plan.name).toUpperCase()
     : 'A WORKOUT';

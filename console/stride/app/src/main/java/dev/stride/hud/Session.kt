@@ -108,14 +108,29 @@ data class Snapshot(
     val avgPulse: Int = 0,
     val maxPulse: Int = 0,
     /**
-     * The *walker's* maximum heart rate, or 0 when they have not given an age.
+     * The *walker's* maximum heart rate, or 0 when they have given neither a
+     * maximum nor an age.
      *
      * Not [maxPulse], which is the highest beat seen during this walk. This one
-     * is a property of the person and the reason zones can be spoken about at
-     * all — see Settings.Person.age. Zero is the ordinary case and means the
-     * coach falls back to comparing against the session's own average.
+     * is a property of the person — see Settings.Person.maxPulse.
      */
     val hrMax: Int = 0,
+    /**
+     * The bpm zones 1-5 start at for this walker, or empty when they have no
+     * zones (no maximum, no age, none typed in). Sent every frame so the HUD
+     * can draw the zone gauge without knowing how they were worked out.
+     */
+    val zoneFloors: List<Int> = emptyList(),
+    /** Which zone [pulse] is in right now, 1-5; 0 below zone 1, or no zones. */
+    val zone: Int = 0,
+    /**
+     * Estimated power, watts, or 0 when it cannot be estimated (no weight
+     * given, belt stopped). An estimate from weight, speed and grade — see
+     * Power.kt — not a measurement; nothing on this treadmill measures force.
+     */
+    val power: Int = 0,
+    /** The same estimate averaged over the moving time of the lap so far. */
+    val lapPower: Int = 0,
     /**
      * Seconds spent in each heart-rate zone, indexed 1-5; index 0 is everything
      * below zone 1 and is counted but rarely interesting.
@@ -138,11 +153,9 @@ data class Snapshot(
     /**
      * The walker's stable profile id, or empty for a guest.
      *
-     * Sent to Home Assistant alongside [who] so the coach can tell whose walk
-     * this is without matching on a display name. The prompt keys every personal
-     * figure — weight, blood pressure, sleep — off this, and attaches none of
-     * them when it is empty. A guest on the belt gets coaching about the walk
-     * and nothing about anybody's body. See Settings.Person.id.
+     * Sent to Home Assistant alongside [who] so a walk can be told apart from
+     * another person's without matching on a display name. See
+     * Settings.Person.id.
      */
     val whoId: String = "",
     /** Guided walk, or empty on a casual one. */
@@ -155,7 +168,7 @@ data class Snapshot(
      *  driven by distance, so "how much of this stretch is left" is a distance
      *  too. See MainActivity.routeTick. */
     val segmentLeftIsDistance: Boolean = false,
-    /** The segment after this one, so the coach can warn before it arrives. */
+    /** The segment after this one, so the HUD can warn before it arrives. */
     val nextLabel: String = "",
     val nextIncline: Double = 0.0,
     /** Total plan length in seconds — one lap on a circuit. */
@@ -166,8 +179,6 @@ data class Snapshot(
     val planClimbM: Double = 0.0,
     /** The steepest gradient anywhere in the plan. */
     val planPeakIncline: Double = 0.0,
-    /** The coach's closing line, ready before the summary appears. */
-    val summaryLine: String = "",
     /** Plan time wrapped into the current lap. Equals elapsed unless looping. */
     val planElapsed: Double = 0.0,
     /** Which lap of an open-ended circuit; 1 for an ordinary walk. */
@@ -240,9 +251,8 @@ data class Snapshot(
     /**
      * JSON string escaping, for the fields that carry text somebody else wrote.
      *
-     * [summaryLine] and the coach's lines come from a language model, plan and
-     * segment labels come from a route file, and names are typed in by hand.
-     * Any of them may contain a quote or a backslash, and one of those dropped
+     * Plan and segment labels come from a route file, and names are typed in
+     * by hand. Either of them may contain a quote or a backslash, and one of those dropped
      * raw into this object produces JSON the HUD cannot parse — a blank screen
      * for the rest of the walk, from one apostrophe.
      */
@@ -296,6 +306,10 @@ data class Snapshot(
         append("\"maxPulse\":$maxPulse,")
         append("\"hrMax\":$hrMax,")
         append("\"zoneSecs\":${zoneSecs.joinToString(",", "[", "]")},")
+        append("\"zoneFloors\":${zoneFloors.joinToString(",", "[", "]")},")
+        append("\"zone\":$zone,")
+        append("\"power\":$power,")
+        append("\"lapPower\":$lapPower,")
         append("\"achievements\":${
             achievements.joinToString(",", "[", "]") { "\"${esc(it)}\"" }
         },")
@@ -312,7 +326,6 @@ data class Snapshot(
         append("\"planTotalSec\":${num("%.0f", planTotalSec)},")
         append("\"planClimbM\":${num("%.0f", planClimbM)},")
         append("\"planPeakIncline\":${num("%.1f", planPeakIncline)},")
-        append("\"summaryLine\":\"${esc(summaryLine)}\",")
         append("\"planElapsed\":${num("%.0f", planElapsed)},")
         append("\"planLap\":$planLap,")
         append("\"planLoops\":$planLoops,")
@@ -328,6 +341,7 @@ data class Snapshot(
         append("\"laps\":${laps.joinToString(",", "[", "]") {
             "{\"i\":${it.index},\"sec\":${num("%.0f", it.activeSec)}," +
                 "\"m\":${num("%.0f", it.distanceM)},\"hr\":${it.avgHr}," +
+                "\"w\":${it.avgPower}," +
                 "\"up\":${num("%.0f", it.ascentM)}}"
         }},")
         append("\"mode\":\"$mode\"")

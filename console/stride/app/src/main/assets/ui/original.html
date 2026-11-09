@@ -19,7 +19,7 @@
    The vertical budget is fixed and every band is load-bearing:
 
        62 – 466   hero        oval track, path ahead, or phase countdown
-      478 – 558   coach       docked ribbon; empty space when nothing is said
+      478 – 558   empty       (was the coach ribbon, removed 2026-11-09)
       566 – 658   telemetry
       678 – 766   controls
 
@@ -298,52 +298,6 @@ button.pulse{animation:pulse .9s ease-out 2}
 .laptable td:first-child,.laptable th:first-child{text-align:left;color:var(--ink-dim)}
 .summary .done button{width:280px;max-width:none;height:88px;font-size:19px}
 
-/* ---- coach ribbon -------------------------------------------------------
-   Docked in its own band between the hero and the telemetry row. It used to
-   float over the top of the hero, where it covered the segment header and the
-   warm-up countdown — the two things you most want to read at the exact moment
-   the coach speaks. This placement is load-bearing; do not float it back.
-
-   The band is empty when the coach is silent. That is deliberate: a ribbon
-   that pushed the layout around when it arrived would move the telemetry under
-   someone's eye mid-stride.
-
-   Chromium 83: no `inset`, no flexbox `gap` — explicit edges and margins only. */
-.coach{
-  position:absolute;left:34px;right:34px;top:478px;height:80px;
-  background:rgba(10,21,51,.96);
-  border:2px solid rgba(57,224,255,.34);
-  border-left:3px solid var(--accent);
-  border-radius:18px;
-  z-index:40;                       /* over the fan menu, under the overlays */
-  opacity:0;
-  transform:translateY(10px);
-  transition:opacity .32s ease,transform .32s ease;
-  pointer-events:none;              /* never steals a tap meant for the HUD */
-}
-/* Tappable only while it is up, so it can never swallow a press aimed at the
-   HUD underneath it. */
-.coach.show{opacity:1;transform:translateY(0);pointer-events:auto}
-.coach.down{background:rgba(22,37,90,.96)}
-.coach .who{
-  position:absolute;left:26px;top:31px;
-  font-size:12px;letter-spacing:.28em;text-transform:uppercase;
-  color:var(--accent);
-}
-.coach .ct{
-  position:absolute;left:122px;right:196px;top:0;height:80px;
-  display:flex;align-items:center;
-  font-size:23px;font-weight:300;line-height:1.3;color:var(--ink);
-  overflow:hidden;
-}
-/* Generous target: this gets pressed by someone moving at 6 km/h. The words
-   are small, the touch area is the full height of the ribbon. */
-.coach .x{
-  position:absolute;top:0;right:0;width:180px;height:80px;
-  color:var(--ink-faint);font-size:14px;line-height:80px;text-align:center;
-  letter-spacing:.18em;text-transform:uppercase;
-}
-
 /* ---- welcome sub-steps --------------------------------------------------
    Walk → Casual or Guided → duration and shape. Purely client side: nothing
    reaches Kotlin until a walk is actually committed to. */
@@ -448,8 +402,6 @@ button.pulse{animation:pulse .9s ease-out 2}
 #sleep{background:#000;z-index:80}
 #sleep .t{font-size:112px;font-weight:100;color:#1d2a4d;font-variant-numeric:tabular-nums}
 #sleep .w{margin-top:26px;font-size:17px;color:#16203c;letter-spacing:.3em;text-transform:uppercase}
-/* The coach's closing line on the summary. */
-.sumcoach{margin-top:14px;max-width:820px;font-size:21px;font-weight:300;line-height:1.45;color:var(--accent);opacity:.92}
 </style>
 </head>
 <body>
@@ -619,7 +571,6 @@ button.pulse{animation:pulse .9s ease-out 2}
          the first with the second read as though the walk had been interrupted. -->
     <div class="sub" id="sumSub">walk complete</div>
     <div class="sumdate" id="sumDate" hidden>Date unknown: the console clock was not set during this workout.</div>
-    <div class="sumcoach" id="sumCoach"></div>
     <div class="cards">
       <div class="card"><div class="k">Time</div><div class="v" id="sumTime">0:00</div></div>
       <div class="card"><div class="k">Distance</div><div class="v"><span id="sumDist">0</span><small>m</small></div></div>
@@ -665,14 +616,6 @@ button.pulse{animation:pulse .9s ease-out 2}
   <div class="row"><button class="primary" id="btnDmkOk">KEY IS BACK IN</button></div>
 </div>
 
-<!-- ======================= COACH ====================================== -->
-<!-- Outside the screens so a line can land on any of them. -->
-<div class="coach" id="coach">
-  <div class="who">Coach</div>
-  <div class="ct" id="coachText"></div>
-  <div class="x">Dismiss &times;</div>
-</div>
-
 <div class="overlay" id="sleep">
   <div class="t" id="sleepClock">—</div>
   <div class="w">Tap to wake</div>
@@ -689,7 +632,7 @@ button.pulse{animation:pulse .9s ease-out 2}
    see the header there for why. This file owns the look and nothing else. */
 const standalone = STRIDE.stub();
 
-/* The coach's suggested pace, so tapping it can take it. */
+/* The plan's suggested pace, so tapping it can take it. */
 let suggestKph = 0;
 
 const LAP_M = 400;
@@ -950,7 +893,7 @@ tap($('pickGuided'), () => { planMode = 'shapes'; chosenRoute = null; chosenLoop
                              buildGuidedStep(); showStep(3); });
 tap($('pickRoutes'), () => { planMode = 'routes'; buildGuidedStep(); showStep(3); });
 tap($('btnBack'), () => showStep(Math.max(1, stepNow - 1)));
-/* Tapping the suggestion takes it. Accepting the coach's number used to
+/* Tapping the suggestion takes it. Accepting the plan's number used to
    mean holding + until you reached it. */
 tap($('suggest'), () => { if (suggestKph > 0) Stride.setSpeed(suggestKph); });
 
@@ -1069,15 +1012,6 @@ function showScreen(mode){
   ['screenWelcome','screenHud','screenSummary']
     .forEach(id => $(id).classList.toggle('on', id === target));
   if (mode === 'welcome' || mode === 'summary') closeFan();
-  /* The ribbon lives in the HUD's own band and belongs to the walk. It is
-     outside the screens so a line can land on any of them, which meant a line
-     still up when the belt stopped stayed up — over the summary's cards, at
-     y=478, where nothing had made room for it. The other four interfaces
-     already dropped it on the way out of the live screen; this one did not. */
-  if (target !== 'screenHud'){
-    clearTimeout(coachTimer);
-    $('coach').classList.remove('show');
-  }
   if (mode !== 'paused') $('confirm').classList.remove('show');
   if (mode !== 'welcome') STRIDE_SETTINGS.close();
   // Back to the first question whenever we land on the welcome screen, so a
@@ -1510,43 +1444,6 @@ function drawPath(s){
   pctx.fill();
 }
 
-/* --- coach ---------------------------------------------------------------
-   Kotlin calls this when a line arrives from Home Assistant. The audio is
-   played on the Kotlin side, not here: this WebView is a 2020 Chromium behind
-   a file:// origin, and the platform media stack is the thing that can be
-   relied on to make a sound. */
-let coachTimer = null;
-
-/* Dismiss. The whole ribbon is the target, not just the glyph — one tap to be
-   rid of it, from anywhere on it, because sometimes you just want to get on
-   with the walk. It silences the audio as well as clearing the text; hiding the
-   words while the speaker keeps talking would be the worst of both. */
-function dismissCoach(){
-  clearTimeout(coachTimer);
-  $('coach').classList.remove('show');
-  Stride.hushCoach();
-}
-tap($('coach'), dismissCoach);
-
-window.coach = function(c){
-  const line = (c && c.line) || '';
-  if (!line) return;
-  /* Only over the walk. A line Home Assistant answers a few seconds late, after
-     the belt has stopped, used to land on top of the summary — showScreen
-     clears one that is already up, this stops one arriving afterwards. The
-     closing line has its own place down there and comes by another road; see
-     sumCoach. */
-  if (SCREENS[shownMode] !== 'screenHud') return;
-  $('coachText').textContent = line;
-  $('coach').classList.add('show');
-  clearTimeout(coachTimer);
-  // Held long enough to read twice — reading at a run takes longer than
-  // reading at a desk, and with headphones in this text *is* the message.
-  // Scales with the sentence so a long line never gets cut short.
-  const hold = Math.min(18000, Math.max(9000, 5000 + line.length * 90));
-  coachTimer = setTimeout(() => $('coach').classList.remove('show'), hold);
-};
-
 /* --- render -------------------------------------------------------------- */
 window.render = function(s){
   const mode = (s.mode || 'welcome').toLowerCase();
@@ -1731,7 +1628,7 @@ function renderLap(s){
 
 function renderLaps(laps){
   $('lapRows').innerHTML = laps.map(l =>
-    '<tr><td>' + l.i + '</td><td>' + mmss(l.sec || 0) + '</td><td>' + nf(l.m || 0) + ' m</td>' +
+    '<tr><td>' + l.i + '</td><td>' + mmss(l.sec || 0) + '</td><td>' + STRIDE.km(l.m) + ' km</td>' +
     '<td>' + paceLabel(l.sec || 0, l.m || 0) + '</td>' +
     '<td>' + (l.hr ? l.hr : '—') + '</td><td>' + nf(l.up || 0) + ' m</td></tr>').join('');
 }
@@ -1741,7 +1638,6 @@ function renderSummary(s){
   /* The walker's own name, or none at all for a guest — better than
    congratulating somebody by the wrong name. */
   $('sumHead').textContent = walker ? ('Nice work, ' + walker) : 'Nice work';
-  $('sumCoach').textContent = s.summaryLine || '';
   $('sumSub').textContent  = kind + ' complete';
   $('sumTime').textContent = mmss(nz(s.elapsed));
   $('sumDist').textContent = nf(nz(s.distance));

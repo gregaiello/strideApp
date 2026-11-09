@@ -37,7 +37,7 @@
        28 –  72   status pills
        92 – 272   speed · centre · incline
       282 – 452   hero slab: the lane, the oval, or the warm-up
-      460 – 544   coach, docked. Empty band when the coach is silent.
+      460 – 544   empty (was the coach band, removed 2026-11-09)
       554 – 646   telemetry
       660 – 764   control row
 
@@ -230,21 +230,6 @@ button{font-family:inherit;color:inherit;background:none;border:none;text-align:
 #heroWarm .m{position:absolute;right:40px;top:70px;width:520px;text-align:right;
              font-size:22px;font-weight:700}
 
-/* ---- coach --------------------------------------------------------------- */
-/* Inverted to paper-white. On a violet field that is the loudest thing
-   available short of the alert red, which is spoken for. */
-.coach{position:absolute;left:36px;top:460px;width:1208px;height:84px;
-       background:var(--ink);color:var(--bg);border-radius:28px;
-       opacity:0;pointer-events:none;transition:opacity .3s ease}
-.coach.show{opacity:1;pointer-events:auto}
-.coach.down{background:#ded7ef}
-.coach .w{position:absolute;left:30px;top:16px;font-size:13px;font-weight:800;
-          letter-spacing:.2em;color:#6b5f86}
-.coach .x{position:absolute;right:30px;top:16px;font-size:13px;font-weight:800;
-          letter-spacing:.16em;color:#8f82a8}
-.coach .t{position:absolute;left:30px;right:30px;top:38px;font-size:24px;font-weight:700;
-          line-height:1.25;overflow:hidden;max-height:36px}
-
 /* ---- telemetry ----------------------------------------------------------- */
 .tele{position:absolute;left:36px;top:554px;width:1208px;display:flex}
 .tele .cell{flex:1;height:92px;margin-right:16px;background:var(--panel);
@@ -331,15 +316,6 @@ button{font-family:inherit;color:inherit;background:none;border:none;text-align:
         font-size:20px;font-weight:800;letter-spacing:.22em;color:var(--accent)}
 .sum .h{position:absolute;left:0;top:146px;width:1280px;text-align:center;
         font-size:80px;font-weight:800;letter-spacing:-.03em}
-/* The coach's closing line, between the headline and the profile band. It
-   carried nothing but `margin-top` until 2026-08-10, and every one of its
-   siblings on this screen is absolutely positioned — so it fell out of the
-   flow they had all left and rendered at 0,0, on top of the kicker. Same fault
-   in Ember, Cluster and Daylight, and only the Original escaped it because its
-   summary is an ordinary flex column. */
-.sum .sumcoach{position:absolute;left:240px;top:240px;width:800px;height:58px;
-               overflow:hidden;text-align:center;
-               font-size:20px;line-height:1.45;color:#b8e62e}
 .sum .band{position:absolute;left:36px;top:300px;width:1208px;height:140px;
            background:var(--slab);border-radius:32px;overflow:hidden}
 .sum .band svg{position:absolute;left:0;top:0;width:1208px;height:140px}
@@ -433,7 +409,7 @@ button{font-family:inherit;color:inherit;background:none;border:none;text-align:
       <button class="slab" id="pickCasual">
         <span class="nm">Free</span><span class="bl">Flat lane, your pace. Laps stack up as you go.</span></button>
       <button class="slab pick" id="pickGuided">
-        <span class="nm">Route</span><span class="bl">Hills in the lane ahead, and a coach in your ear.</span></button>
+        <span class="nm">Route</span><span class="bl">Hills in the lane ahead.</span></button>
       <button class="slab gone" id="pickRoutes">
         <span class="nm">My routes</span><span class="bl">A walk you have already done, hills and all.</span></button>
     </div>
@@ -523,11 +499,6 @@ button{font-family:inherit;color:inherit;background:none;border:none;text-align:
     <div class="m" id="warmNote">&mdash;</div>
   </div>
 
-  <div class="coach" id="coach">
-    <div class="w">YOUR COACH</div>
-    <div class="x">TAP TO CLOSE</div>
-    <div class="t" id="coachText"></div>
-  </div>
 
   <div class="tele">
     <div class="cell"><div class="k">TIME</div><div class="v" id="elapsed">0:00</div></div>
@@ -567,7 +538,6 @@ button{font-family:inherit;color:inherit;background:none;border:none;text-align:
   <div class="sumdate" id="sumDate" hidden>DATE UNKNOWN &middot; THE CONSOLE CLOCK WAS NOT SET DURING THIS WORKOUT</div>
   <button class="lapspill" id="lapsPill" hidden>LAPS</button>
   <div class="lapsheet" id="lapSheet" hidden><div class="lk">LAPS</div><div class="laptable"><table><thead><tr><th>LAP</th><th>TIME</th><th>DISTANCE</th><th>PACE</th><th>AVG HR</th><th>CLIMB</th></tr></thead><tbody id="lapRows"></tbody></table></div><div class="lhint">TAP ANYWHERE TO CLOSE</div></div>
-  <div class="sumcoach" id="sumCoach"></div>
   <div class="band">
     <svg viewBox="0 0 1208 140" preserveAspectRatio="none">
       <path id="sumLine" fill="none" stroke="#c6f24e" stroke-width="12" stroke-linecap="round"/>
@@ -629,7 +599,7 @@ button{font-family:inherit;color:inherit;background:none;border:none;text-align:
 <script>
 const standalone = STRIDE.stub();
 
-/* The coach's suggested pace, so tapping it can take it. */
+/* The plan's suggested pace, so tapping it can take it. */
 let suggestKph = 0;
 const $ = STRIDE.$, tap = STRIDE.tap, mmss = STRIDE.mmss, nf = STRIDE.nf;
 const SVGNS = 'http://www.w3.org/2000/svg';
@@ -817,7 +787,7 @@ tap($('pickGuided'), () => { flow.setControl('guided'); renderPlan(); });
 tap($('pickRoutes'), () => { flow.setControl('routes'); renderPlan(); });
 tap($('btnBack'),    () => flow.back());
 /* Tapping the suggestion takes it. It was read-only, so accepting the
-   coach's number meant holding + until you got there. */
+   plan's number meant holding + until you got there. */
 tap($('suggest'), () => { if (suggestKph > 0) Stride.setSpeed(suggestKph); });
 /* Tapping a plan used to arm the belt immediately, so choosing a shape and
    then a duration was impossible — the walk had already started. Selection
@@ -878,30 +848,6 @@ STRIDE.stepper($('btnInclineDown'), d => Stride.incline(-d), 0.5, 0.5);
 STRIDE.hold($('btnKeyBack'), 2000, () => Stride.ackDmk(),
             p => { $('keyFill').style.width = (p * 100) + '%'; });
 
-/* ---- coach --------------------------------------------------------------- */
-let coachTimer = null;
-tap($('coach'), () => {
-  $('coach').classList.remove('show');
-  clearTimeout(coachTimer);
-  Stride.hushCoach();
-});
-window.coach = function(c){
-  const line = (c && c.line) || '';
-  if (!line) return;
-  /* Only over the walk. The ribbon is docked in the live screen's own band and
-     has no place to be anywhere else — a line that Home Assistant answers a
-     few seconds late, after the belt has stopped, used to land on top of the
-     summary. showScreen already clears it on the way out; this stops one
-     arriving afterwards. The closing line has its own place on the summary and
-     comes down a different road — see sumCoach. */
-  if (shownScreen !== 'scLive') return;
-  $('coachText').textContent = line;
-  $('coach').classList.add('show');
-  clearTimeout(coachTimer);
-  coachTimer = setTimeout(() => $('coach').classList.remove('show'),
-                          Math.min(18000, Math.max(9000, 5000 + line.length * 90)));
-};
-
 /* ---- sleep --------------------------------------------------------------- */
 const SLEEP_AFTER_MS = 5 * 60 * 1000;
 /* performance.now(), not Date.now(): this is a duration, and the console's
@@ -942,7 +888,7 @@ function showScreen(id){
   ['scSetup','scLive','scSummary'].forEach(s => $(s).classList.toggle('on', s === id));
   if (id === 'scSetup'){ flow.reset(); STRIDE.resetDerived(); }
   if (id !== 'scSetup') STRIDE_SETTINGS.close();
-  if (id !== 'scLive'){ $('paused').classList.remove('on'); $('coach').classList.remove('show'); }
+  if (id !== 'scLive') $('paused').classList.remove('on');
   lastTouch = performance.now();
   shownScreen = id;
 }
@@ -1106,7 +1052,7 @@ function renderLapCell(s){
   const flash = s.lap.flash;
   cell.classList.toggle('flash', flash > 0);
   $('lapK').textContent = flash ? 'LAP ' + flash + ' DONE'
-                                : 'LAP ' + s.lap.n + ' · ' + nf(s.lap.m) + ' M';
+                                : 'LAP ' + s.lap.n + ' · ' + STRIDE.km(s.lap.m) + ' KM';
   $('lapTime').textContent = mmss(s.lap.sec);
   $('lapPace').textContent = paceText(s.lap.sec, s.lap.m);
 }
@@ -1117,7 +1063,7 @@ function renderLapTable(s){
   $('lapsPill').textContent = n + (n === 1 ? ' LAP' : ' LAPS') + ' ›';
   if (!n) $('lapSheet').hidden = true;
   $('lapRows').innerHTML = s.laps.map(l =>
-    '<tr><td>' + l.n + '</td><td>' + mmss(l.sec) + '</td><td>' + nf(l.m) + ' M</td>' +
+    '<tr><td>' + l.n + '</td><td>' + mmss(l.sec) + '</td><td>' + STRIDE.km(l.m) + ' KM</td>' +
     '<td>' + (l.paceSecPerKm ? mmss(l.paceSecPerKm) + ' /KM' : '—') + '</td>' +
     '<td>' + (l.hr || '—') + '</td><td>' + nf(l.up) + ' M</td></tr>').join('');
   $('sumDate').hidden = !s.dateUnknown;
@@ -1135,7 +1081,6 @@ function renderSummary(s){
     : hills === 1
       ? 'One hill, and you took it, ' + (s.profile || 'you')
       : 'That’s ' + hills + ' hills, ' + (s.profile || 'you');
-  $('sumCoach').textContent = s.summaryLine || '';
   $('sumTime').textContent  = mmss(s.session.elapsed);
   $('sumDist').textContent  = STRIDE.km(s.session.distance);
   $('sumCals').textContent  = nf(s.session.calories);

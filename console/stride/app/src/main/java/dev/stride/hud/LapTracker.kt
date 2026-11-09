@@ -20,6 +20,8 @@ data class Lap(
     val avgHr: Int,
     val ascentM: Double,
     val descentM: Double,
+    /** Estimated watts over the lap's moving time; 0 when there was no estimate. */
+    val avgPower: Int = 0,
 )
 
 /** The lap in progress, for the running screen. [avgHr] 0 means no pulse yet. */
@@ -29,6 +31,7 @@ data class LapLive(
     val distanceM: Double,
     val avgHr: Int = 0,
     val ascentM: Double = 0.0,
+    val avgPower: Int = 0,
 )
 
 /**
@@ -69,6 +72,12 @@ class LapTracker {
     private var descent = 0.0
     private var hrSum = 0L
     private var hrN = 0
+    /** Joules and the moving seconds they were spread over — time-weighted
+     *  rather than averaged per sample, so a late or doubled sample cannot
+     *  tilt the lap. */
+    private var energyJ = 0.0
+    private var powerSec = 0.0
+    private var lastSampleMs = -1L
     private val closed = mutableListOf<Lap>()
 
     @Synchronized fun start(tMs: Long, activeSec: Double, distanceM: Double, altitudeM: Double) {
@@ -84,15 +93,23 @@ class LapTracker {
      * @param moving false while paused: the seconds still pass through so the
      *               distance and altitude stay in step, but a resting pulse is
      *               not counted as effort in a lap whose time leaves the pause out.
+     * @param watts  the power estimate at this sample, 0 when there is none
+     *               (a walker with no weight). Such a lap reports 0, not a low
+     *               average.
      */
     @Synchronized fun sample(tMs: Long, activeSec: Double, distanceM: Double, hr: Int, altitudeM: Double,
-                             moving: Boolean = true) {
+                             moving: Boolean = true, watts: Double = 0.0) {
         if (!started) return
         step(distanceM)
         val dAlt = altitudeM - lastAltitude
         if (dAlt > 0) ascent += dAlt else descent -= dAlt
         lastAltitude = altitudeM
         if (hr > 0 && moving) { hrSum += hr; hrN++ }
+        // Capped at a few seconds: a gap longer than that is a stall in the
+        // sampler, and the watts either side of it say nothing about it.
+        val dt = if (lastSampleMs >= 0) ((tMs - lastSampleMs) / 1000.0).coerceIn(0.0, 5.0) else 0.0
+        lastSampleMs = tMs
+        if (moving && watts > 0) { energyJ += watts * dt; powerSec += dt }
     }
 
     /** @return the lap just closed, or null if the press was ignored. */
@@ -117,7 +134,8 @@ class LapTracker {
         if (!started) return null
         val pending = (distanceM - lastDistance).coerceAtLeast(0.0)
         return LapLive(index, (activeSec - startActive).coerceAtLeast(0.0), distance + pending,
-            avgHr = if (hrN > 0) (hrSum / hrN).toInt() else 0, ascentM = ascent)
+            avgHr = if (hrN > 0) (hrSum / hrN).toInt() else 0, ascentM = ascent,
+            avgPower = avgPower())
     }
 
     @Synchronized fun closed(): List<Lap> = closed.toList()
@@ -126,6 +144,7 @@ class LapTracker {
         started = false
         index = 0
         closed.clear()
+        lastSampleMs = -1L
         open(0L, 0.0)
     }
 
@@ -146,6 +165,7 @@ class LapTracker {
             avgHr = if (hrN > 0) (hrSum / hrN).toInt() else 0,
             ascentM = ascent,
             descentM = descent,
+            avgPower = avgPower(),
         )
         closed.add(lap)
         return lap
@@ -159,5 +179,9 @@ class LapTracker {
         descent = 0.0
         hrSum = 0L
         hrN = 0
+        energyJ = 0.0
+        powerSec = 0.0
     }
+
+    private fun avgPower(): Int = if (powerSec > 0) Math.round(energyJ / powerSec).toInt() else 0
 }

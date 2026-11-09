@@ -46,10 +46,11 @@
          second one. See MainActivity.live. -->
     <uses-permission android:name="android.permission.REORDER_TASKS" />
 
-    <!-- targetSdk 28 blocks cleartext by default, which would stop MediaPlayer
-         fetching the coach's synthesised audio from Home Assistant. It has to be
-         plain HTTP: the console's clock reads 2022, so TLS validation fails on
-         anything served over HTTPS. The URL never leaves the LAN. -->
+    <!-- targetSdk 28 blocks cleartext by default. It was allowed for the live
+         coach's audio, fetched from Home Assistant over plain HTTP because the
+         console's clock reads 2022 and TLS validation fails. The coach is gone
+         from this fork (2026-11-09); left allowed so any LAN-only HTTP fetch
+         keeps working as it did. -->
     <application
         android:label="STRIDE"
         android:icon="@mipmap/ic_launcher"

@@ -500,7 +500,7 @@ function paceAt(kph) {
 function lapOf(l) {
   return { n: l.i, sec: l.sec || 0, m: l.m || 0,
            paceSecPerKm: lapPace(l.sec || 0, l.m || 0),
-           hr: l.hr || 0, up: l.up || 0 };
+           hr: l.hr || 0, up: l.up || 0, w: l.w || 0 };
 }
 
 function adapt(raw) {
@@ -576,9 +576,6 @@ function adapt(raw) {
                 nextName: raw.nextLabel || '',
                 nextIncline: raw.nextIncline || 0 },
 
-    /* The coach's closing line, asked for before the walk ends so it is here
-       when the summary appears rather than arriving after it. */
-    summaryLine: raw.summaryLine || '',
 
     session:  { elapsed: raw.elapsed || 0,
                 distance: distance,
@@ -591,11 +588,21 @@ function adapt(raw) {
                 avgIncline: raw.avgIncline || 0, maxIncline: raw.maxIncline || 0,
                 avgPulse: raw.avgPulse || 0, maxPulse: raw.maxPulse || 0,
 
-                /* The walker's own maximum, 0 when they have not given an age.
-                   Zero is the ordinary case and the whole UI has to cope with
-                   it: no age means no zones, and a console that drew five bars
-                   off 220-minus-a-guess would be inventing physiology. */
+                /* The walker's own maximum, 0 when they have given neither a
+                   maximum nor an age. The whole UI has to cope with zero: it
+                   means no zones, and a console that drew five bars off a guess
+                   would be inventing physiology. */
                 hrMax: raw.hrMax || 0,
+
+                /* The bpm each of zones 1-5 starts at, from Settings > Who
+                   walks; empty when there are no zones. `zone` is where the
+                   pulse is now, 1-5, or 0 below zone 1 / no zones. */
+                zoneFloors: raw.zoneFloors || [],
+                zone: raw.zone || 0,
+
+                /* Estimated watts from weight, speed and grade (Power.kt), 0
+                   when the walker has no weight set or the belt is stopped. */
+                power: raw.power || 0,
 
                 /* Seconds per zone, index 0-5, where 0 is below zone 1. Empty
                    when there is no maximum to divide by. */
@@ -632,6 +639,7 @@ function adapt(raw) {
     lap:  raw.lap ? { n: raw.lap, sec: raw.lapElapsed || 0, m: raw.lapDistance || 0,
                       paceSecPerKm: lapPace(raw.lapElapsed || 0, raw.lapDistance || 0),
                       hr: raw.lapHr || 0, up: raw.lapClimb || 0,
+                      w: raw.lapPower || 0,
                       flash: raw.lapFlash || 0 } : null,
     laps: (raw.laps || []).map(lapOf),
 
@@ -665,6 +673,67 @@ var ZONES = [
   { key: 'z4', name: 'Hard',      from: 0.80, colour: '#e08a4a' },
   { key: 'z5', name: 'Maximum',   from: 0.90, colour: '#d75d5d' }
 ];
+
+/**
+ * Draw (or update) the live heart-rate zone gauge inside `el`.
+ *
+ * Five coloured segments, one per zone, scaled by how many bpm each zone
+ * spans, with the current zone at full strength, the others dimmed, and a
+ * tick at the pulse itself. The theme only gives `el` a size and a position;
+ * everything inside is built here so five interfaces do not carry five copies
+ * of the same arithmetic.
+ *
+ * Hidden when there are no zones (no maximum, no age) or no pulse: an empty
+ * gauge with a tick at zero reads as a heart that has stopped.
+ *
+ * Zone 5 has no top. It is drawn as wide as zone 4, which is the honest
+ * guess at where a heart tops out without pretending to know it.
+ */
+function zoneGauge(el, session) {
+  var f = session.zoneFloors || [], bpm = session.pulse || 0;
+  if (f.length !== 5 || bpm <= 0) { el.style.visibility = 'hidden'; return; }
+  el.style.visibility = '';
+  var lo = f[0] - (f[1] - f[0]), hi = f[4] + (f[4] - f[3]);
+  if (!el.sxSegs) {
+    el.style.position = el.style.position || 'absolute';
+    el.sxSegs = [];
+    for (var i = 0; i < 5; i++) {
+      var seg = document.createElement('div');
+      seg.style.cssText = 'position:absolute;top:0;bottom:0;border-radius:2px;' +
+                          'background:' + ZONES[i + 1].colour;
+      el.appendChild(seg);
+      el.sxSegs.push(seg);
+    }
+    el.sxTick = document.createElement('div');
+    el.sxTick.style.cssText = 'position:absolute;top:-4px;bottom:-4px;width:3px;' +
+                              'margin-left:-1px;border-radius:1px;background:#fff';
+    el.appendChild(el.sxTick);
+  }
+  /* Below zone 1 is drawn as part of zone 1's segment's run-up: the scale
+     starts one zone-1-width below its floor, so a warm-up pulse sits at the
+     left edge rather than off it. */
+  var span = hi - lo, z = session.zone || 0;
+  for (var k = 0; k < 5; k++) {
+    var from = k === 0 ? lo : f[k], to = k === 4 ? hi : f[k + 1];
+    var s = el.sxSegs[k].style;
+    s.left = ((from - lo) / span * 100).toFixed(2) + '%';
+    s.width = 'calc(' + ((to - from) / span * 100).toFixed(2) + '% - 2px)';
+    s.opacity = k + 1 === z ? '1' : '0.28';
+  }
+  var at = Math.max(0, Math.min(1, (bpm - lo) / span));
+  el.sxTick.style.left = (at * 100).toFixed(2) + '%';
+}
+
+/** "Z3", or '' with no zone — for a label beside the pulse. */
+function zoneLabel(session) {
+  return session.zone > 0 && (session.zoneFloors || []).length === 5 ? 'Z' + session.zone : '';
+}
+
+/** The colour of the zone the pulse is in, or '' with none. */
+function zoneColour(session) {
+  return session.zone > 0 && (session.zoneFloors || []).length === 5
+    ? ZONES[session.zone].colour : '';
+}
 
 /**
  * Turn the raw per-zone seconds into rows worth drawing.
@@ -787,7 +856,7 @@ function screenFor(state) {
  * interfaces share, so fixing `original.html` alone fixed one screen out of
  * five and left Ember, Cluster, Daylight and Pacer still offering strangers.
  *
- * It matters more than it looks now that coaching and recording are per person:
+ * It matters more than it looks now that recording is per person:
  * a name offered here that Settings does not have is a walker who silently gets
  * neither. The picker and the store have to be one list.
  */
@@ -796,8 +865,8 @@ function profiles() {
 
   /* Guest sits alongside the household rather than instead of it: somebody
      else's turn on the belt is common, and it should not mean picking a name
-     that is not yours. It is never coached and never published, because a
-     guest has not agreed to anything — Settings.coachedFor / publishFor return
+     that is not yours. It is never published, because a guest has not agreed
+     to anything — Settings.publishFor returns
      false for any name that is not in the people list, so "Guest" needs no
      special case in Kotlin.
 
@@ -1215,7 +1284,7 @@ function fanLabel(n) { return n ? n + ' OF 4' : 'OFF'; }
 var BRIDGE = ['choose', 'chooseGuided', 'chooseRoute', 'skipWarmup', 'skipCooldown', 'pause',
               'setSpeed',
               'resume', 'end', 'home', 'speed', 'incline', 'fan', 'setFan',
-              'setWalker', 'ackDmk', 'hushCoach', 'dim', 'setUi', 'wakeBoard',
+              'setWalker', 'ackDmk', 'dim', 'setUi', 'wakeBoard',
               'lap'];
 
 /** @return true if this page is running without the console behind it. */
@@ -1409,7 +1478,6 @@ function wakeStep(overlay, done) {
 
        ?screen=live-guided   open straight onto one screen
        ?dmk=1                safety key out
-       ?coach=1              a coach line on arrival
 
    Number keys 1-9 and 0 jump between screens while it runs.
    =========================================================================== */
@@ -1456,10 +1524,11 @@ function demo(opts) {
     lapN++; lapT = t; lapD = dist;
     console.log('Stride.lap', flashN);
   };
-  var DEMO_LAPS = [{ i: 1, sec: 300, m: 1000, hr: 128, up: 0 },
-                   { i: 2, sec: 255, m: 1000, hr: 151, up: 4 },
-                   { i: 3, sec: 120, m: 400, hr: 163, up: 24 },
-                   { i: 4, sec: 330, m: 1000, hr: 139, up: 0 }];
+  var DEMO_LAPS = [{ i: 1, sec: 300, m: 1000, hr: 128, up: 0, w: 121 },
+                   { i: 2, sec: 255, m: 1000, hr: 151, up: 4, w: 139 },
+                   { i: 3, sec: 120, m: 400, hr: 163, up: 24, w: 198 },
+                   { i: 4, sec: 330, m: 1000, hr: 139, up: 0, w: 118 }];
+  var DEMO_FLOORS = [93, 111, 130, 148, 167];   // 50..90% of 185
 
   function frame() {
     var phase = screen === 'live-casual' || screen === 'live-guided' ? 'running'
@@ -1472,13 +1541,21 @@ function demo(opts) {
     if (!step) { step = steps[steps.length - 1]; idx = steps.length; }
 
     var speed = moving ? (phase === 'warmup' ? 2.0 : 5.4) : 0;
+    /* A pulse that wanders through all five zones every two minutes, so the
+       zone gauge can be watched moving. */
+    var demoHr = moving ? Math.round(125 + 45 * Math.sin(t / 19)) : 0;
+    var demoZone = 0;
+    for (var z = 0; z < DEMO_FLOORS.length; z++) if (demoHr >= DEMO_FLOORS[z]) demoZone = z + 1;
     if (moving) { t += 0.2; dist += speed / 3.6 * 0.2; cals += 0.02; }
 
     global.render({
       speed: speed, incline: guided ? step.incline : 1.5,
       targetSpeed: speed, targetIncline: guided ? step.incline : 1.5,
       distance: Math.round(dist), elapsed: Math.round(t),
-      calories: Math.round(cals), pulse: 0, fan: 2,
+      calories: Math.round(cals), pulse: demoHr, fan: 2,
+      hrMax: 185, zoneFloors: DEMO_FLOORS, zone: demoZone,
+      power: moving ? Math.round(80 * speed / 3.6 * (1 + 9.81 * (guided ? step.incline : 1.5) / 100)) : 0,
+      lapPower: moving ? 142 : 0,
       workout: 'workout', dmk: q.dmk === '1',
       ramping: '', phaseLeft: phase === 'warmup' ? 161 : 0, boardMode: 2,
       avgSpeed: 5.2, maxSpeed: 6.1, avgIncline: 3.4, maxIncline: 9.5,
@@ -1499,12 +1576,6 @@ function demo(opts) {
   }
 
   if (guided && global.plan) global.plan({ name: 'Rolling hills', steps: steps });
-  if (q.coach === '1' && global.coach) {
-    setTimeout(function () {
-      global.coach({ line: 'Nine and a half percent for the next forty seconds. ' +
-                           'Shorten your stride and stay tall.', kind: 'local' });
-    }, 400);
-  }
 
   frame();
   setInterval(frame, 200);
@@ -1665,6 +1736,9 @@ global.STRIDE = {
 
   ZONES: ZONES,
   zoneRows: zoneRows,
+  zoneGauge: zoneGauge,
+  zoneLabel: zoneLabel,
+  zoneColour: zoneColour,
   beatStyle: beatStyle,
 
   stub: stub,

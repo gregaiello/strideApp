@@ -345,7 +345,7 @@
      give a treadmill your age has to stay a supported answer. The first tap
      up lands mid-range rather than at 13, so nobody has to press + forty
      times to reach themselves. */
-  function ageStepper(p) {
+  function ageStepper(p, after) {
     var s = el('div', 'sx-step');
     var v = el('div', 'sx-v');
     var value = p.age || 0;
@@ -361,6 +361,37 @@
       draw();
       try { S = JSON.parse(bridge().setPersonAge(p.name, value)); } catch (e) {}
       p.age = value;
+      if (after) after();
+    };
+    s.appendChild(press(el('button', '', '&minus;'), function () { bump(-1); }));
+    s.appendChild(v);
+    s.appendChild(press(el('button', '', '+'), function () { bump(1); }));
+    draw();
+    return s;
+  }
+
+  /* A number that belongs to a person (weight, measured maximum), saved
+     through setPersonValue. Like the age, "not set" is a value: stepping below
+     the minimum clears it, and the first tap up from unset lands on `start`
+     rather than on the minimum. */
+  function personStepper(p, key, o) {
+    var s = el('div', 'sx-step');
+    var v = el('div', 'sx-v');
+    var value = p[key] || 0;
+    var draw = function () {
+      v.innerHTML = value >= o.min
+        ? value.toFixed(o.dp || 0) + '<small>' + o.unit + '</small>'
+        : '<small>' + (o.unset || 'not set') + '</small>';
+    };
+    var bump = function (d) {
+      if (value < o.min) value = d > 0 ? o.start : 0;
+      else value = Math.round((value + d * o.inc) * 100) / 100;
+      if (value > o.max) value = o.max;
+      if (value < o.min) value = 0;
+      draw();
+      try { S = JSON.parse(bridge().setPersonValue(p.name, key, String(value))); } catch (e) {}
+      p[key] = value;
+      if (o.after) o.after();
     };
     s.appendChild(press(el('button', '', '&minus;'), function () { bump(-1); }));
     s.appendChild(v);
@@ -548,7 +579,7 @@
     hp: 'M4 15v-3a8 8 0 0116 0v3M4 15h3v6H4zM17 15h3v6h-3z',
     ha: 'M3 11l9-8 9 8M5 10v10h14V10',
     deck: 'M3 17h18M6 17l3-9h6l3 9M9 8V5h6v3',
-    coach: 'M4 5h16v11H9l-5 4V5z',
+
     ui: 'M3 4h18v14H3zM3 9h18M9 9v9',
     screen: 'M3 4h18v12H3zM8 20h8M12 16v4',
     routes: 'M3 18l6-3 6 3 6-3V6l-6 3-6-3-6 3zM9 15V6M15 18V9',
@@ -562,7 +593,7 @@
     ['ha',     'Home Assistant', paneHa],
     ['deck',   'Treadmill',      paneDeck],
     ['routes', 'My routes',      paneRoutes],
-    ['coach',  'Coach',          paneCoach],
+
     ['ui',     'Interface',      paneUi],
     ['screen', 'Display',        paneScreen],
     ['about',  'About',          paneAbout]
@@ -587,12 +618,19 @@
     g.appendChild(list);
     sc.appendChild(g);
 
+    /* Whose card is open below. The highlight follows this, not the default
+       walker: it used to mark the default, so tapping somebody else opened
+       their settings while the ring stayed on the first person, and the
+       screen looked as though the tap had not landed (2026-11-09). Being the
+       default is now said in words on the card instead. */
+    var editing = '';
+
     function drawPeople() {
       list.innerHTML = '';
       (S.people || []).forEach(function (p) {
-        var c = el('button', 'sx-person' + (p.name === S.default_walker ? ' sx-on' : ''));
+        var c = el('button', 'sx-person' + (p.name === editing ? ' sx-on' : ''));
         var bits = [];
-        bits.push(p.coached ? 'Coaching' : 'No coaching');
+        if (p.name === S.default_walker) bits.push('Default');
         // Being linked is a different fact from being published, and the one
         // people actually ask about: is this the same person Home Assistant
         // knows? Somebody with no link is not broken — they simply only exist
@@ -601,7 +639,7 @@
         c.innerHTML = '<div class="sx-av">' + p.name.charAt(0).toUpperCase() + '</div>' +
                       '<div class="sx-pn">' + p.name + '</div>' +
                       '<div class="sx-pd">' + bits.join(' · ') + '</div>';
-        press(c, function () { editPerson(p); });
+        press(c, function () { editPerson(p.name); });
         list.appendChild(c);
       });
       var add = el('button', 'sx-person sx-add',
@@ -620,6 +658,7 @@
      * dialog is sized for a phone and lands wherever it likes.
      */
     function addPerson() {
+      editing = ''; drawPeople();
       detail.innerHTML = '';
       detail.appendChild(el('div', 'sx-gh', 'Add someone'));
 
@@ -633,7 +672,9 @@
         if (!name) return;
         try { S = JSON.parse(bridge().addPerson(name)); } catch (e) {}
         detail.innerHTML = '';
-        drawPeople(); drawDefault(); drawHa();
+        drawDefault(); drawHa();
+        // Straight into the new person, who will want a weight and zones.
+        if (findPerson(name)) editPerson(name); else drawPeople();
       };
       input.setAttribute('readonly', 'readonly');
       input.sxCapitalise = true;
@@ -647,17 +688,28 @@
       wrap.appendChild(press(el('button', 'sx-pill sx-go', 'ADD'), commit));
 
       detail.appendChild(row('Their name',
-        'Everyone who walks gets their own totals. Coaching and recording are ' +
-        'set per person once they are here.', wrap));
+        'Everyone who walks gets their own totals. Weight, heart-rate zones and ' +
+        'recording are set per person once they are here.', wrap));
 
       // Straight into the keyboard — the only reason to be on this screen is
       // to type a name.
       openKeyboard(input);
     }
 
-    /* Editing is a second tap on the card rather than a nested screen: there
-       are only three things to change and one of them is "remove". */
-    function editPerson(p) {
+    function findPerson(name) {
+      var all = S.people || [];
+      for (var i = 0; i < all.length; i++) if (all[i].name === name) return all[i];
+      return null;
+    }
+
+    /* Editing opens under the cards rather than on a nested screen. Taken by
+       name and looked up fresh, because every save hands back a new copy of
+       the settings and the derived numbers (maximum, zone floors) with it. */
+    function editPerson(name) {
+      var p = findPerson(name);
+      if (!p) return;
+      editing = name;
+      drawPeople();
       detail.innerHTML = '';
       detail.appendChild(el('div', 'sx-gh', p.name));
       detail.appendChild(row('Home Assistant',
@@ -669,25 +721,87 @@
             + 'person in Home Assistant.',
         el('div', 'sx-ro', p.ha_person
           ? '<b>' + p.ha_person + '</b>' : 'console only')));
-      detail.appendChild(row('Coaching',
-        'Send this walk to Home Assistant to be turned into words. The prompt there ' +
-        'carries one person\'s weight and blood pressure, which is why this is per person.',
-        toggle(null, p.coached, function (on) {
-          try { S = JSON.parse(bridge().setPersonFlag(p.name, 'coached', on)); } catch (e) {}
-          p.coached = on; drawPeople();
-        })));
+      detail.appendChild(row('Weight',
+        'Only used for the power estimate on the running screen. Without it there is ' +
+        'no power figure, rather than one made up for an average walker.',
+        personStepper(p, 'weight_kg', { start: 75, min: 25, max: 250, inc: 0.5, dp: 1,
+                                        unit: 'kg' })));
       detail.appendChild(row('Age',
-        'Only used for heart-rate zones. With it the coach can tell "taking it ' +
-        'easy" from "working hard"; without it, it can still tell "harder than ' +
-        'earlier in this walk" and says so. Leaving it unset costs the first of ' +
-        'those and nothing else — the estimate behind it is rough anyway, so ' +
-        'the coach talks in words rather than numbers either way.',
-        ageStepper(p)));
+        'Gives a maximum heart rate of 220 minus age when no measured one is set. ' +
+        'Rough — two people of the same age can differ by a dozen beats.',
+        ageStepper(p, drawZones)));
+      detail.appendChild(row('Maximum heart rate',
+        'From a test or a watch. Wins over the age estimate; zones are worked out ' +
+        'from it unless you set your own below.',
+        personStepper(p, 'hr_max_set', { start: p.hr_max || 185, min: 120, max: 230, inc: 1,
+                                         unit: 'bpm', unset: p.age >= 13 ? 'from age' : 'not set',
+                                         after: drawZones })));
+      var zonesBox = el('div');
+      detail.appendChild(zonesBox);
+      drawZones();
+
+      /* The five zone floors. With none of their own they follow 50/60/70/80/90%
+         of the maximum, and each one says so; nudging any floor makes all five
+         the walker's own, and USE % OF MAX hands them back. A floor cannot be
+         pushed past its neighbours — Kotlin refuses zones out of order, and a
+         stepper that silently did nothing would look broken. */
+      function drawZones() {
+        var cur = findPerson(name) || p;
+        zonesBox.innerHTML = '';
+        var floors = (cur.zone_floors || []).slice();
+        var own = (cur.zones || []).length === 5;
+        if (floors.length !== 5) {
+          zonesBox.appendChild(row('Heart-rate zones',
+            'Set an age or a maximum heart rate first. The zones are drawn on the running ' +
+            'screen and counted on the summary.',
+            el('div', 'sx-ro', 'no zones')));
+          return;
+        }
+        var names = ['Very light', 'Light', 'Moderate', 'Hard', 'Maximum'];
+        floors.forEach(function (bpm, k) {
+          zonesBox.appendChild(row('Zone ' + (k + 1) + ' · ' + names[k],
+            k === 0 ? (own ? 'Your own zones. Each starts at the beat shown.'
+                           : 'Following 50/60/70/80/90% of ' + cur.hr_max + ' bpm.')
+                    : '',
+            zoneStepper(floors, k, own)));
+        });
+        if (own) {
+          zonesBox.appendChild(row('Back to the default',
+            'Zones from shares of the maximum again.',
+            press(el('button', 'sx-pill', 'USE % OF MAX'), function () {
+              try { S = JSON.parse(bridge().setPersonValue(name, 'zones', '')); } catch (e) {}
+              drawZones();
+            })));
+        }
+      }
+
+      function zoneStepper(floors, k, own) {
+        var s = el('div', 'sx-step');
+        var v = el('div', 'sx-v');
+        var draw = function () { v.innerHTML = floors[k] + '<small>bpm</small>'; };
+        var bump = function (d) {
+          var lo = k > 0 ? floors[k - 1] + 1 : 40;
+          var hi = k < 4 ? floors[k + 1] - 1 : 230;
+          var next = Math.min(hi, Math.max(lo, floors[k] + d));
+          if (next === floors[k]) return;
+          floors[k] = next;
+          draw();
+          try { S = JSON.parse(bridge().setPersonValue(name, 'zones', floors.join(','))); } catch (e) {}
+          // The first nudge of a derived set makes all five the walker's own,
+          // and the explanation and the USE % OF MAX button change with it.
+          if (!own) drawZones();
+        };
+        s.appendChild(press(el('button', '', '&minus;'), function () { bump(-1); }));
+        s.appendChild(v);
+        s.appendChild(press(el('button', '', '+'), function () { bump(1); }));
+        draw();
+        return s;
+      }
       detail.appendChild(row('Record to Home Assistant',
         'Their distance, time and calories, published under their own name.',
         toggle(null, p.publish, function (on) {
           try { S = JSON.parse(bridge().setPersonFlag(p.name, 'publish', on)); } catch (e) {}
-          p.publish = on; drawPeople();
+          drawPeople();
         })));
       detail.appendChild(row('Start as ' + p.name,
         'Assume this person when the belt starts without anyone tapping a name.',
@@ -698,6 +812,7 @@
         'Their recorded walks are not deleted.',
         press(el('button', 'sx-pill sx-warn', 'REMOVE'), function () {
           try { S = JSON.parse(bridge().removePerson(p.name)); } catch (e) {}
+          editing = '';
           detail.innerHTML = ''; drawPeople(); drawDefault(); drawHa();
         })));
     }
@@ -736,7 +851,7 @@
     g2.appendChild(defRow);
     g2.appendChild(row('Guest walks',
       'A one-off walk counted on the console but never recorded against a person. ' +
-      'Guests are never coached and never published.',
+      'Guests are never published.',
       toggle('allow_guest', S.allow_guest !== false)));
     sc.appendChild(g2);
 
@@ -748,7 +863,9 @@
         segment('default_walker', opts, S.default_walker || '', function () { drawPeople(); })));
     }
 
-    drawPeople();
+    // Open on the default walker, so the highlighted card and the settings
+    // under it are the same person from the first frame.
+    if (findPerson(S.default_walker)) editPerson(S.default_walker); else drawPeople();
     drawDefault();
     drawHa();
   }
@@ -850,7 +967,7 @@
      on this page picks an app. */
   function paneHeadphones(pane) {
     var sc = head(pane, 'Headphones',
-      'Bluetooth headphones for YouTube, Netflix and the coach. Once connected, every ' +
+      'Bluetooth headphones for YouTube and Netflix. Once connected, every ' +
       'sound the console makes plays in them instead of the speakers.');
     if (!has('hpStatus')) {
       sc.appendChild(el('div', 'sx-empty', 'This build has no headphone support.'));
@@ -955,7 +1072,7 @@
   function paneHa(pane) {
     var sc = head(pane, 'Home Assistant',
       'Optional. The treadmill runs perfectly well with none of this set — you lose ' +
-      'the history, the dashboards and the talking coach, and nothing else.');
+      'the history and the dashboards, and nothing else.');
 
     var g = group('Connection');
     g.appendChild(row('Publish to Home Assistant',
@@ -1152,32 +1269,6 @@
     drawNas();
     var prevTick = pane.sxTick;
     pane.sxTick = function () { if (prevTick) prevTick(); drawNas(); };
-  }
-
-  // --- coach ---
-  function paneCoach(pane) {
-    var sc = head(pane, 'Coach',
-      'Marks your kilometres and says something occasionally. It never touches the ' +
-      'belt — every pace change is yours.');
-
-    var g = group('');
-    g.appendChild(row('Coach', 'Off means a silent walk with no ribbon at all.',
-      toggle('coach_on', S.coach_on !== false)));
-    g.appendChild(row('How much it talks',
-      'Sparing marks kilometres and little else. Chatty adds pace and rhythm observations.',
-      segment('coach_talk', [['sparing', 'Sparing'], ['normal', 'Normal'], ['chatty', 'Chatty']],
-        S.coach_talk || 'normal')));
-    g.appendChild(row('Voice', 'Only affects wording, never what it is willing to say.',
-      segment('coach_voice', [
-        ['Supportive Friend', 'Supportive'], ['Drill Sergeant', 'Drill sergeant'],
-        ['Data Nerd', 'Data nerd'], ['Zen Master', 'Zen']
-      ], S.coach_voice || 'Supportive Friend')));
-    g.appendChild(row('Written by Home Assistant',
-      'Off keeps every line on the console — the built-in ones, which are shorter and never late.',
-      toggle('coach_remote', S.coach_remote !== false)));
-    g.appendChild(row('Announce milestones', 'First mark at 500 m, then every kilometre.',
-      toggle('coach_milestones', S.coach_milestones !== false)));
-    sc.appendChild(g);
   }
 
   // --- interface ---
@@ -1456,7 +1547,7 @@
 
     /* The PIN is a speed bump, not security: it is the same on every console
        and sits in this file. It is there so a curious guest, or a tap meant
-       for something else, cannot wipe the NAS, broker and coach setup that
+       for something else, cannot wipe the NAS and broker setup that
        took an evening to get right. */
     var g2 = group('Starting over');
     var pin = field('reset_pin', '', true, 'password');

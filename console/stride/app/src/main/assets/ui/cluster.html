@@ -18,8 +18,9 @@
    someone who wants to read instruments rather than be encouraged.
 
    It is also the only one of the four handoff directions that left a real
-   band for the coach — telemetry at 444, coach at 552, controls at 660, none
-   of them touching. The other three had to be squeezed to make room.
+   band below the telemetry — telemetry at 444, the lap row at 548, controls
+   at 660, none of them touching. (That band was the coach's, until the coach
+   was taken out of this fork on 2026-11-09.)
 
    Vertical budget, fixed:
 
@@ -27,7 +28,6 @@
       104 – 420   dials and centre bay
       444 – 532   telemetry strip
       548 – 636   the lap in progress, during a workout
-      552 – 640   coach, docked over the lap row while it speaks
       660 – 764   control row
 
    Chromium 83: no `inset`, no flexbox `gap`, no `:has()`, no CSS nesting.
@@ -245,14 +245,21 @@ button{font-family:inherit;color:inherit;background:none;border:none;text-align:
 .tele .v .u{font-size:16px;color:var(--dim)}
 .tele .hr .k{color:var(--ghost)}
 .tele .hr .v{color:var(--ghost)}
+/* Ghosted only while there is nothing to read; a live pulse with a zone gauge
+   under it is an instrument like the others. */
+.tele .hr.live .k{color:var(--dim)}
+.tele .hr.live .v{color:var(--ink)}
+/* The zone gauge: a 6px bar under the pulse, five segments wide in proportion
+   to the bpm each zone spans, the live one lit. Drawn by STRIDE.zoneGauge. The
+   zone itself sits beside the number in the zone's own colour, so it can be
+   read without finding the tick. */
+.tele .hr .zg{position:absolute;left:26px;right:22px;top:79px;height:5px}
+.tele .hr .zl{font-size:16px;margin-left:10px;letter-spacing:.06em}
 
 /* ---- the lap row ------------------------------------------------------------
    The lap used to be a sixth cell on the telemetry strip, and at 1212/6 px its
    time-plus-pace overflowed and pushed "/KM" out of the box. It has a row of its
-   own now, in the coach's band: the coach is off on most walks, and when it
-   does speak it docks on top for a few seconds and goes away again. A lap row
-   that blinks out under a coach line is a smaller loss than a lap readout
-   squeezed into a sixth of the width. */
+   own now, in the band below the strip. */
 .laprow{position:absolute;left:34px;top:548px;width:1212px;height:88px;
         background:var(--chrome);border-top:1px solid var(--line);
         border-bottom:1px solid var(--line);display:flex}
@@ -263,19 +270,6 @@ button{font-family:inherit;color:inherit;background:none;border:none;text-align:
 .laprow .v .u{font-size:16px;color:var(--dim)}
 .laprow.flash .lapc .k,.laprow.flash .lapc .v{color:var(--accent)}
 
-/* ---- coach ---------------------------------------------------------------- */
-/* Its own band, below the telemetry strip, docked over the lap row. */
-.coach{position:absolute;left:34px;top:552px;width:1212px;height:88px;
-       background:#14191b;border:1px solid #2c383c;border-radius:6px;
-       opacity:0;pointer-events:none;transition:opacity .3s ease}
-.coach.show{opacity:1;pointer-events:auto}
-.coach.down{background:#1c2326}
-.coach .w{position:absolute;left:22px;top:30px;width:96px;height:28px;line-height:28px;
-          text-align:center;background:var(--accent);color:#08161a;
-          font-size:12px;letter-spacing:.22em;border-radius:3px}
-.coach .x{position:absolute;right:22px;top:34px;font-size:12px;letter-spacing:.2em;color:var(--dim)}
-.coach .t{position:absolute;left:142px;top:22px;width:860px;font-size:23px;font-weight:300;
-          line-height:1.35;overflow:hidden;max-height:62px}
 
 /* ---- control row ---------------------------------------------------------- */
 /* A lit top edge on every key: these are meant to read as machined buttons in
@@ -342,8 +336,8 @@ button{font-family:inherit;color:inherit;background:none;border:none;text-align:
                    font-size:21px;letter-spacing:.2em;color:#ff8a7d}
 
 /* ---- summary ---------------------------------------------------------------- */
-/* The kicker and the headline sit 24 px higher than they did, which is what
-   makes room for the coach's line below them. There was nothing in that space;
+/* The kicker and the headline sit 24 px higher than they did, which made room
+   for a closing line below them. That line was the coach's and went with it;
    the grid, the button and every other band are exactly where they were. */
 /* The whole screen moved up on 17 August 2026 to make room for the two things
    it never had: what the heart did, and what the walk beat. Six numbers and a
@@ -352,14 +346,7 @@ button{font-family:inherit;color:inherit;background:none;border:none;text-align:
         font-size:14px;letter-spacing:.34em;color:var(--accent)}
 .sum .h{position:absolute;left:0;top:108px;width:1280px;text-align:center;
         font-size:54px;font-weight:200}
-/* The coach's closing line. It carried nothing but `margin-top` until
-   2026-08-10, and every one of its siblings on this screen is absolutely
-   positioned — so it fell out of the flow they had all left and rendered at
-   0,0, on top of the kicker. Same fault in Ember, Daylight and Pacer, and only
-   the Original escaped it because its summary is an ordinary flex column. */
-.sum .sumcoach{position:absolute;left:210px;top:176px;width:860px;height:52px;
-               overflow:hidden;text-align:center;
-               font-size:19px;line-height:1.35;color:#8fd6c8}
+
 
 /* Left half: the numbers, three rows of two rather than two rows of three, so
    the right half is free for the heart. */
@@ -584,21 +571,17 @@ button{font-family:inherit;color:inherit;background:none;border:none;text-align:
     <div class="cell"><div class="k">DISTANCE</div><div class="v mono"><span id="dist">0.00</span><span class="u"> KM</span></div></div>
     <div class="cell"><div class="k">CALORIES</div><div class="v mono" id="cals">0</div></div>
     <div class="cell"><div class="k">CLIMBED</div><div class="v mono"><span id="climb">0</span><span class="u"> M</span></div></div>
-    <div class="cell hr"><div class="k">HEART RATE</div><div class="v mono" id="pulse">&mdash;&mdash;</div></div>
+    <div class="cell hr" id="hrCell"><div class="k">HEART RATE</div><div class="v mono"><span id="pulse">&mdash;&mdash;</span><span class="zl" id="pulseZone"></span></div><div class="zg" id="zoneGauge"></div></div>
+    <div class="cell"><div class="k">POWER</div><div class="v mono"><span id="power">&mdash;</span><span class="u"> W</span></div></div>
   </div>
 
   <div class="laprow" id="lapRow" style="display:none">
     <div class="cell lapc"><div class="k" id="lapK">LAP 1</div><div class="v mono" id="lapTime">0:00</div></div>
-    <div class="cell"><div class="k">LAP DISTANCE</div><div class="v mono"><span id="lapDist">0</span><span class="u"> M</span></div></div>
+    <div class="cell"><div class="k">LAP DISTANCE</div><div class="v mono"><span id="lapDist">0.00</span><span class="u"> KM</span></div></div>
     <div class="cell"><div class="k">LAP AVG HR</div><div class="v mono" id="lapHr">&mdash;&mdash;</div></div>
     <div class="cell"><div class="k">LAP CLIMB</div><div class="v mono"><span id="lapClimb">0</span><span class="u"> M</span></div></div>
     <div class="cell"><div class="k">LAP VAM</div><div class="v mono"><span id="lapVam">&mdash;</span><span class="u"> M/H</span></div></div>
-  </div>
-
-  <div class="coach" id="coach">
-    <div class="w">COACH</div>
-    <div class="x">TAP TO DISMISS</div>
-    <div class="t" id="coachText"></div>
+    <div class="cell"><div class="k">LAP AVG POWER</div><div class="v mono"><span id="lapPower">&mdash;</span><span class="u"> W</span></div></div>
   </div>
 
   <div class="controls">
@@ -630,8 +613,7 @@ button{font-family:inherit;color:inherit;background:none;border:none;text-align:
   <div class="h" id="sumHead">Nice work</div>
   <div class="sumdate" id="sumDate" hidden>DATE UNKNOWN &middot; THE CONSOLE CLOCK WAS NOT SET DURING THIS WORKOUT</div>
   <button class="lapspill" id="lapsPill" hidden>LAPS</button>
-  <div class="lapsheet" id="lapSheet" hidden><div class="lk">LAPS</div><div class="laptable"><table><thead><tr><th>LAP</th><th>TIME</th><th>DISTANCE</th><th>PACE</th><th>AVG HR</th><th>CLIMB</th></tr></thead><tbody id="lapRows"></tbody></table></div><div class="lhint">TAP ANYWHERE TO CLOSE</div></div>
-  <div class="sumcoach" id="sumCoach"></div>
+  <div class="lapsheet" id="lapSheet" hidden><div class="lk">LAPS</div><div class="laptable"><table><thead><tr><th>LAP</th><th>TIME</th><th>DISTANCE</th><th>PACE</th><th>AVG HR</th><th>AVG POWER</th><th>CLIMB</th></tr></thead><tbody id="lapRows"></tbody></table></div><div class="lhint">TAP ANYWHERE TO CLOSE</div></div>
   <div class="grid">
     <div class="cell"><div class="kk">TIME</div><div class="vv mono" id="sumTime">0:00</div></div>
     <div class="cell last"><div class="kk">DISTANCE</div><div class="vv mono"><span id="sumDist">0.00</span><span class="u"> KM</span></div></div>
@@ -683,7 +665,7 @@ button{font-family:inherit;color:inherit;background:none;border:none;text-align:
 <script>
 const standalone = STRIDE.stub();
 
-/* The coach's suggested pace, so tapping it can take it. */
+/* The plan's suggested pace, so tapping it can take it. */
 let suggestKph = 0;
 const $ = STRIDE.$, tap = STRIDE.tap, mmss = STRIDE.mmss, nf = STRIDE.nf;
 
@@ -757,8 +739,8 @@ const flow = STRIDE.flow(step => {
 });
 
 /* Read from Settings, never written here. A name offered on this picker
-   that Settings does not have is a walker who silently gets no coaching
-   and no history — coaching and recording are per person now. Rebuilt
+   that Settings does not have is a walker who silently gets no history —
+   recording is per person now. Rebuilt
    whenever settings close, because somebody may have just been added. */
 function buildPeople(){
   $('people').innerHTML = '';
@@ -865,7 +847,7 @@ tap($('pickCasual'), () => flow.setControl('casual'));
 tap($('pickGuided'), () => { flow.setControl('guided'); renderPlan(); });
 tap($('pickRoutes'), () => { flow.setControl('routes'); renderPlan(); });
 tap($('btnBack'),    () => flow.back());
-/* Tapping the suggestion takes it. Accepting the coach's number used to
+/* Tapping the suggestion takes it. Accepting the plan's number used to
    mean holding + until you reached it. */
 tap($('suggest'), () => { if (suggestKph > 0) Stride.setSpeed(suggestKph); });
 tap($('speedK'), swapSpeedUnit);
@@ -930,29 +912,6 @@ STRIDE.stepper($('btnInclineDown'), d => Stride.incline(-d), 0.5, 0.5);
 STRIDE.hold($('btnKeyBack'), 2000, () => Stride.ackDmk(),
             p => { $('keyFill').style.width = (p * 100) + '%'; });
 
-/* ---- coach ----------------------------------------------------------------- */
-let coachTimer = null;
-tap($('coach'), () => {
-  $('coach').classList.remove('show');
-  clearTimeout(coachTimer);
-  Stride.hushCoach();
-});
-window.coach = function(c){
-  const line = (c && c.line) || '';
-  if (!line) return;
-  /* Only over the walk. The ribbon is docked in the live screen's own band and
-     has no place to be anywhere else — a line that Home Assistant answers a
-     few seconds late, after the belt has stopped, used to land on top of the
-     summary. showScreen already clears it on the way out; this stops one
-     arriving afterwards. The closing line has its own place on the summary and
-     comes down a different road — see sumCoach. */
-  if (shownScreen !== 'scLive') return;
-  $('coachText').textContent = line;
-  $('coach').classList.add('show');
-  clearTimeout(coachTimer);
-  coachTimer = setTimeout(() => $('coach').classList.remove('show'),
-                          Math.min(18000, Math.max(9000, 5000 + line.length * 90)));
-};
 
 /* ---- sleep ----------------------------------------------------------------- */
 const SLEEP_AFTER_MS = 5 * 60 * 1000;
@@ -994,7 +953,7 @@ function showScreen(id){
   ['scSetup','scLive','scSummary'].forEach(s => $(s).classList.toggle('on', s === id));
   if (id === 'scSetup'){ flow.reset(); STRIDE.resetDerived(); }
   if (id !== 'scSetup') STRIDE_SETTINGS.close();
-  if (id !== 'scLive'){ $('paused').classList.remove('on'); $('coach').classList.remove('show'); }
+  if (id !== 'scLive') $('paused').classList.remove('on');
   lastTouch = performance.now();
   shownScreen = id;
 }
@@ -1063,6 +1022,11 @@ window.render = function(raw){
   $('cals').textContent    = nf(s.session.calories);
   $('climb').textContent   = Math.round(s.session.climb);
   $('pulse').textContent   = s.session.pulse ? s.session.pulse : '——';
+  $('hrCell').classList.toggle('live', s.session.pulse > 0);
+  $('pulseZone').textContent = STRIDE.zoneLabel(s.session);
+  $('pulseZone').style.color = STRIDE.zoneColour(s.session);
+  STRIDE.zoneGauge($('zoneGauge'), s.session);
+  $('power').textContent   = s.session.power > 0 ? s.session.power : '—';
 
   $('fanLab').textContent  = s.fan + '/4';
   $('leadLab').textContent = timed ? 'SKIP' : s.phase === 'paused' ? 'RESUME' : 'PAUSE';
@@ -1190,10 +1154,11 @@ function renderLapCell(s){
   row.classList.toggle('flash', flash > 0);
   $('lapK').textContent = flash ? 'LAP ' + flash + ' DONE' : 'LAP ' + s.lap.n + ' TIME';
   $('lapTime').textContent  = mmss(s.lap.sec);
-  $('lapDist').textContent  = nf(s.lap.m);
+  $('lapDist').textContent  = STRIDE.km(s.lap.m);
   $('lapHr').textContent    = s.lap.hr ? s.lap.hr : '——';
   $('lapClimb').textContent = s.lap.up.toFixed(1);
   $('lapVam').textContent   = vamText(s.lap.up, s.lap.sec);
+  $('lapPower').textContent = s.lap.w > 0 ? s.lap.w : '—';
 }
 
 function renderLapTable(s){
@@ -1202,9 +1167,10 @@ function renderLapTable(s){
   $('lapsPill').textContent = n + (n === 1 ? ' LAP' : ' LAPS') + ' ›';
   if (!n) $('lapSheet').hidden = true;
   $('lapRows').innerHTML = s.laps.map(l =>
-    '<tr><td>' + l.n + '</td><td>' + mmss(l.sec) + '</td><td>' + nf(l.m) + ' M</td>' +
+    '<tr><td>' + l.n + '</td><td>' + mmss(l.sec) + '</td><td>' + STRIDE.km(l.m) + ' KM</td>' +
     '<td>' + (l.paceSecPerKm ? mmss(l.paceSecPerKm) + ' /KM' : '—') + '</td>' +
-    '<td>' + (l.hr || '—') + '</td><td>' + nf(l.up) + ' M</td></tr>').join('');
+    '<td>' + (l.hr || '—') + '</td><td>' + (l.w ? l.w + ' W' : '—') + '</td>' +
+    '<td>' + nf(l.up) + ' M</td></tr>').join('');
   $('sumDate').hidden = !s.dateUnknown;
 }
 
@@ -1214,7 +1180,7 @@ function renderSummary(s){
     (s.plan.name || 'MANUAL') +
     ' ' + Math.round(s.session.elapsed / 60)).toUpperCase();
   $('sumHead').textContent  = 'Nice work, ' + (s.profile || 'you');
-  $('sumCoach').textContent = s.summaryLine || '';
+
   $('sumTime').textContent  = mmss(s.session.elapsed);
   $('sumDist').textContent  = STRIDE.km(s.session.distance);
   $('sumCals').textContent  = nf(s.session.calories);
@@ -1264,7 +1230,7 @@ function renderHeartPanel(s){
   } else if (avg > 0){
     /* Read, but no age on file, so there is no maximum to divide by. Say what
        is missing and where it lives — a blank panel reads as broken. */
-    noneEl.textContent = 'Add your age in Settings to see time in each zone.';
+    noneEl.textContent = 'Add your age or heart-rate zones in Settings to see time in each zone.';
   } else {
     noneEl.textContent = 'No heart rate recorded for this workout.';
   }

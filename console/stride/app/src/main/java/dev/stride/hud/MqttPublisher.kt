@@ -9,7 +9,7 @@ import org.eclipse.paho.client.mqttv3.MqttMessage
 import org.eclipse.paho.client.mqttv3.persist.MemoryPersistence
 
 /**
- * Carries treadmill telemetry to Home Assistant over MQTT, and coaching back.
+ * Carries treadmill telemetry to Home Assistant over MQTT.
  *
  * Uses HA's MQTT discovery so entities create themselves — no YAML to maintain.
  * All telemetry rides one retained JSON state topic; each discovery config picks
@@ -40,9 +40,6 @@ class MqttPublisher(
     val stateTopic get() = "$prefix/treadmill/state"
     val availTopic get() = "$prefix/treadmill/availability"
 
-    /** A coaching moment, on its way to HA to be turned into words. */
-    val eventTopic get() = "$prefix/treadmill/event"
-
     /**
      * The belt is turning and no workout is running.
      *
@@ -61,10 +58,6 @@ class MqttPublisher(
 
     /** Per-person workout records live under here, one device each. */
     val personTopic get() = "$prefix/person"
-
-    /** The words coming back. Not retained — a line from last week's walk
-     *  reappearing at the start of the next one would be worse than silence. */
-    val coachTopic get() = "$prefix/coach/live"
 
     /**
      * Which of the console's interfaces to show. Publish a UI name here and
@@ -202,7 +195,7 @@ class MqttPublisher(
                 override fun messageArrived(topic: String, message: MqttMessage) {
                     val payload = String(message.payload)
                     // A handler throwing here would kill the MQTT thread and
-                    // take telemetry down with it — coaching is never worth that.
+                    // take telemetry down with it.
                     try {
                         handlers[topic]?.invoke(payload)
                     } catch (e: Exception) {
@@ -460,18 +453,6 @@ class MqttPublisher(
                        "{${parts.joinToString(",")}}", retained = true)
         }
         Log.i(TAG, "mqtt discovery published for $who")
-    }
-
-    /**
-     * Announce a coaching moment. Not retained: this is a thing that happened at
-     * an instant, and HA either hears it now or the moment has passed.
-     */
-    fun publishEvent(json: String) {
-        if (!connected) {
-            Log.i(TAG, "coach: mqtt down, event not sent")
-            return
-        }
-        publishRaw(eventTopic, json, retained = false)
     }
 
     private fun publishRaw(topic: String, payload: String, retained: Boolean = false) {

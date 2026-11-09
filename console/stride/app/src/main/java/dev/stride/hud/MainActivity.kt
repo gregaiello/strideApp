@@ -482,9 +482,7 @@ class MainActivity : Activity() {
     /** The treadmill as a standard Bluetooth fitness machine, for Zwift and
      *  friends. Telemetry only, and silent on a radio that cannot advertise. */
     private val ftms by lazy { Ftms(this) }
-    private val voice by lazy { CoachVoice(this) }
     private val nas by lazy { NasCopy(this, cfg) { routes.acceptNas(it) } }
-    private val coach = Coach()
 
     @Volatile private var running = false
     /** Kept so [onDestroy] can wait for the loop to let go of USB before it
@@ -543,27 +541,6 @@ class MainActivity : Activity() {
         return if (secs > 1.0) sessionDistance / secs * 3.6 else 0.0
     }
 
-    /**
-     * Which zone a share of maximum heart rate falls in, 0-5.
-     *
-     * The usual five-zone split on percentage of maximum. Zone 0 is everything
-     * below 50%, which is standing about rather than a training zone, and is
-     * counted separately so it cannot inflate zone 1.
-     *
-     * Kept here rather than shared with Coach.zoneOf deliberately: that one
-     * answers "what should the coach call this effort right now" and returns
-     * 1-5 with no floor, because a coach saying "barely ticking over" about a
-     * 45% share is right. This one is dividing up a walk and needs the floor.
-     */
-    private fun zoneIndex(share: Double): Int = when {
-        share < 0.50 -> 0
-        share < 0.60 -> 1
-        share < 0.70 -> 2
-        share < 0.80 -> 3
-        share < 0.90 -> 4
-        else -> 5
-    }
-
     /** Pace at the moment of pausing, and the speed the resume ramp is climbing
      *  towards. Zero for either means no ramp is in progress. */
     @Volatile private var pausedKph = 0.0
@@ -593,10 +570,21 @@ class MainActivity : Activity() {
      * set, which is the only thing that can change the answer mid-walk.
      */
     @Volatile private var walkerHrMax = 0
+    /**
+     * The same person, for weight and zone floors. Cached for the same reason;
+     * null for a guest, who gets neither a power figure nor zones.
+     */
+    @Volatile private var walkerPerson: Settings.Person? = null
 
     private fun refreshWalkerHrMax() {
-        walkerHrMax = cfg.person(walker)?.maxPulse ?: 0
+        walkerPerson = cfg.person(walker)
+        walkerHrMax = walkerPerson?.maxPulse ?: 0
     }
+
+    /** Estimated watts right now; 0 with no weight or a stopped belt. */
+    private fun powerNow(kph: Double, grade: Double): Double =
+        if (Session.isMoving(session)) Power.watts(walkerPerson?.weightKg ?: 0.0, kph, grade)
+        else 0.0
 
     // --- guided walk ---------------------------------------------------------
     /** Empty on a casual walk. Set once at START and never rewritten mid-walk. */
@@ -639,13 +627,6 @@ class MainActivity : Activity() {
      */
     @Volatile private var inclineAuto = false
     private var lastInclineMoveAt = 0L
-
-    /** The coach's closing line, asked for near the end and shown on the summary. */
-    @Volatile private var summaryLine = ""
-
-    /** Its audio, held back until the summary is actually on screen. */
-    @Volatile private var summaryUrl = ""
-    @Volatile private var summarySpoken = false
 
     /** Last speed the *board* reported, as opposed to what we asked for. */
     @Volatile private var lastActualKph = 0.0
@@ -1186,9 +1167,6 @@ class MainActivity : Activity() {
         @JavascriptInterface fun home() {
             session = Session.WELCOME
             workout = "none"
-            summaryLine = ""
-            summaryUrl = ""
-            summarySpoken = false
             abandonRecording()
             clearPlan()
             resetSession()
@@ -1229,7 +1207,7 @@ class MainActivity : Activity() {
         }
 
         /**
-         * Take the coach's suggested pace, by tapping it.
+         * Take the plan's suggested pace, by tapping it.
          *
          * The suggestion was previously read-only — "try 6.8 km/h" and then you
          * held the + button until you got there. Accepting an offer should be
@@ -1306,16 +1284,6 @@ class MainActivity : Activity() {
             dmkLatched = false
             dmk = false
             repaint()
-        }
-
-        /**
-         * Dismiss the coach: shut it up mid-sentence and drop anything still in
-         * flight. Silencing the speaker is the point of the tap — clearing the
-         * words while the audio played on would be the worst of both.
-         */
-        @JavascriptInterface fun hushCoach() {
-            voice.stop()
-            coach.hush()
         }
 
         /**
@@ -1410,8 +1378,37 @@ class MainActivity : Activity() {
         @JavascriptInterface fun setPersonFlag(name: String, flag: String, on: Boolean): String {
             cfg.savePeople(cfg.people().map {
                 if (it.name != name) it
-                else if (flag == "coached") it.copy(coached = on) else it.copy(publish = on)
+                else if (flag == "publish") it.copy(publish = on) else it
             })
+            return cfg.json().toString()
+        }
+
+        /**
+         * Weight, measured maximum heart rate, or zone floors, for one person.
+         *
+         * `key` is "weight_kg" or "hr_max_set" (a number, 0 clears it), or
+         * "zones" (five bpm floors joined by commas, empty to go back to
+         * shares of the maximum). Anything out of range clears rather than
+         * being stored: a 7 kg walker or a zone 3 below zone 2 is a slip of
+         * the stepper, and the HUD would draw it faithfully.
+         */
+        @JavascriptInterface fun setPersonValue(name: String, key: String, value: String): String {
+            cfg.savePeople(cfg.people().map { p ->
+                if (p.name != name) p else when (key) {
+                    "weight_kg" -> p.copy(weightKg = value.toDoubleOrNull()
+                        ?.takeIf { it in 25.0..250.0 } ?: 0.0)
+                    "hr_max_set" -> p.copy(hrMaxSet = value.toIntOrNull()
+                        ?.takeIf { it in Settings.HR_MAX_RANGE } ?: 0)
+                    "zones" -> p.copy(zones = value.split(',')
+                        .mapNotNull { it.trim().toIntOrNull() }
+                        .takeIf { z -> z.size == 5 && z.zipWithNext().all { it.first < it.second } &&
+                                       z.first() >= 40 && z.last() <= 230 }
+                        ?: emptyList())
+                    else -> p
+                }
+            })
+            refreshWalkerHrMax()
+            Log.i(TAG, "settings: $key for $name -> ${value.ifEmpty { "cleared" }}")
             return cfg.json().toString()
         }
 
@@ -1425,7 +1422,7 @@ class MainActivity : Activity() {
             cfg.savePeople(cfg.people().map {
                 if (it.name == name) it.copy(age = clean) else it
             })
-            // The walker may be the person just edited, and the zones the coach
+            // The walker may be the person just edited, and the zones the HUD
             // uses come off a cached copy.
             refreshWalkerHrMax()
             Log.i(TAG, "settings: age for $name -> ${if (clean > 0) "$clean" else "not given"}")
@@ -1650,7 +1647,6 @@ class MainActivity : Activity() {
         mqtt.reconfigure(cfg.brokerUri(), cfg.mqttUser(), cfg.mqttPass(), cfg.mqttPrefix())
         // Re-registered because reconfigure() dropped the client, and a clean
         // session forgets subscriptions with it.
-        mqtt.onMessage(mqtt.coachTopic, ::onCoachLine)
         mqtt.onMessage(mqtt.uiTopic, ::onUiCommand)
         mqtt.onMessage(mqtt.personsTopic, ::onPersons)
         mqtt.onMessage(mqtt.routesTopic, routes::accept)
@@ -1668,10 +1664,10 @@ class MainActivity : Activity() {
      *
      * **On its own thread, deliberately.** The start-up call to
      * [applyMqttSettings] is made from [pollLoop], and sleeping there would
-     * stall telemetry, the coach and every board write behind a broker that
+     * stall telemetry and every board write behind a broker that
      * has nothing to do with any of them. A treadmill whose belt stops
      * responding because Home Assistant is down is a far worse machine than
-     * one that walks fine without a coach.
+     * one that walks fine without Home Assistant.
      *
      * Stops at the first success rather than staying resident: from there
      * Paho's own `automaticReconnect` owns the connection, and it is better at
@@ -2469,7 +2465,8 @@ class MainActivity : Activity() {
         lastSampleMs = t
         val moving = Session.isMoving(session)
         val d = recordedDistance.update(snap.distance)
-        laps.sample(t, snap.elapsed, snap.distance, snap.pulse, climbM, moving)
+        laps.sample(t, snap.elapsed, snap.distance, snap.pulse, climbM, moving,
+                    watts = powerNow(snap.speed, snap.incline))
         writeRecording {
             it.sample(Sample(t, snap.elapsed, d, snap.speed, snap.incline,
                              climbM, snap.pulse, moving))
@@ -2716,132 +2713,6 @@ class MainActivity : Activity() {
         pollThread = thread(name = "fitpro-poll") { pollLoop() }
     }
 
-    /**
-     * A coach line has come back from Home Assistant: show it, speak it.
-     *
-     * Re-serialised through JSONObject rather than injected raw — a malformed
-     * payload should produce nothing, not a syntax error that takes the whole
-     * page's script down with it.
-     */
-    private fun onCoachLine(payload: String) {
-        val obj = org.json.JSONObject(payload)
-        val line = obj.optString("line").trim()
-        if (line.isEmpty()) return
-        val safe = org.json.JSONObject()
-            .put("line", line)
-            .put("kind", obj.optString("kind"))
-            .toString()
-        // The round trip, every time. The fallback firing is the only symptom
-        // slow coaching has, and it looks identical whether Home Assistant took
-        // nine seconds or never answered at all. `grep "round trip"` over a
-        // walk's logcat says which, and how close to the wire the good ones are.
-        val took = coach.heard(line)
-        if (took >= 0) Log.i(TAG, "coach: round trip ${took} ms — \"$line\"")
-        else Log.i(TAG, "coach: \"$line\" (nothing was waiting on it)")
-        if (obj.optString("kind") == "summary") {
-            // Held, both the words and the audio. This was asked for at 98% of
-            // the plan, so it arrives while there is still walking to do —
-            // showing or speaking it then would be the opposite of the point.
-            // `speakSummary` releases it once the summary is actually up.
-            summaryLine = line
-            summaryUrl = obj.optString("url")
-            Log.i(TAG, "coach: closing line ready" +
-                    if (summaryUrl.isEmpty()) " (no audio)" else "")
-            return
-        }
-        showCoach(safe)
-        obj.optString("url").takeIf { it.isNotEmpty() }?.let { voice.play(it) }
-    }
-
-    /**
-     * Say the closing line, once, and only while the summary is on screen.
-     *
-     * Waiting for the screen rather than firing on arrival: the line is asked
-     * for at 98% of the plan and can come back with a minute of walking still
-     * to go. Reading somebody their summary while they are still on the belt
-     * would be worse than silence.
-     *
-     * Polled rather than triggered from `finishWorkout`, because the answer may
-     * not have arrived yet when the belt stops — this catches it whichever way
-     * round they happen.
-     *
-     * Latched on the *result*, not the attempt. `play` drops a line when
-     * something else is still speaking, so latching on the call would silently
-     * lose the closing line whenever the last segment's coaching ran long.
-     */
-    private fun speakSummary() {
-        if (session != Session.SUMMARY || summarySpoken) return
-        if (summaryUrl.isEmpty()) return
-        if (voice.play(summaryUrl)) {
-            summarySpoken = true
-            Log.i(TAG, "coach: speaking the closing line")
-        }
-    }
-
-    private fun showCoach(json: String) {
-        runOnUiThread { web.evaluateJavascript("window.coach($json)", null) }
-    }
-
-    /**
-     * One frame through the coach: emit a moment if there is one, and fall back
-     * to the canned line if Home Assistant does not answer in time.
-     *
-     * The workout never waits on any of this — a moment that cannot be sent is
-     * simply lost, which is the correct outcome for a thing that was only ever
-     * going to be a sentence.
-     */
-    private fun coachTick(snap: Snapshot) {
-        coach.observe(snap)?.let { moment ->
-            Log.i(TAG, "coach moment: ${moment.kind} — ${moment.detail}")
-            // The live-coach prompt in Home Assistant carries one person's
-            // weight, blood pressure and target. Sending somebody else's walk
-            // to it would put those numbers in front of whoever is on the belt,
-            // so this has always been gated — but it was gated on the walker
-            // being *named Sam*, which meant a second person in the same
-            // house silently got a different product and no way to change it.
-            //
-            // It is now a property of the person, set in Settings, and an
-            // unknown walker gets nothing rather than falling through to "not
-            // Sam". Everyone else still gets the local canned lines, which
-            // are generic and name nobody.
-            //
-            // Whether the question actually left the building decides how long
-            // it is worth waiting for an answer. If it did not — no broker, or
-            // a walker with no coaching set up — there is nothing in flight and
-            // the eight-second wait is eight seconds of silence for nothing.
-            // Take the local line now.
-            val asked = if (cfg.coachedFor(walker)) {
-                mqtt.publishEvent(coach.payload(moment, snap))
-                mqtt.connected
-            } else {
-                Log.i(TAG, "coach: $walker is not set up for coaching, keeping it local")
-                false
-            }
-            if (!asked) coach.giveUp()?.let { showLocalCoach(it, "nobody to ask") }
-        }
-        coach.timedOut()?.let {
-            showLocalCoach(it, "no answer from HA in ${Coach.FALLBACK_MS / 1000}s")
-        }
-    }
-
-    /**
-     * A line the console wrote itself.
-     *
-     * The closing line is held rather than shown, exactly as it is when Home
-     * Assistant answers — it is asked for at 98% of the plan, so a walk with no
-     * coaching used to put "That is another one done" over the belt with a
-     * minute still to walk, and then show a blank summary.
-     */
-    private fun showLocalCoach(local: Coach.Local, why: String) {
-        Log.i(TAG, "coach: $why, using \"${local.text}\"")
-        if (local.kind == "summary") {
-            summaryLine = local.text
-            return
-        }
-        showCoach(org.json.JSONObject()
-            .put("line", local.text).put("kind", "local").toString())
-    }
-
     private fun pollLoop() {
         if (!resolveDeviceId()) { Log.e(TAG, "board did not answer on 4 or 2"); return }
         // Before anything else. A locked board refuses reads too, so limits,
@@ -2849,7 +2720,6 @@ class MainActivity : Activity() {
         unlockWithRetries()
         readLimits()
         readSleepConfig()
-        mqtt.onMessage(mqtt.coachTopic, ::onCoachLine)
         mqtt.onMessage(mqtt.uiTopic, ::onUiCommand)
         mqtt.onMessage(mqtt.personsTopic, ::onPersons)
         mqtt.onMessage(mqtt.routesTopic, routes::accept)
@@ -3035,8 +2905,6 @@ class MainActivity : Activity() {
             // then put the screen the person just left back for a fifth of a
             // second. One path, one answer to "which screen is this".
             repaint()
-            coachTick(snap)
-            speakSummary()
 
             sinceFan += POLL_MS
             if (sinceFan >= FAN_EVERY_MS) { sinceFan = 0; readFan() }
@@ -3264,14 +3132,14 @@ class MainActivity : Activity() {
                 if (pulse > maxPulse) maxPulse = pulse
                 pulseSum += pulse
                 pulseSamples++
-                if (walkerHrMax > 0) {
+                val who = walkerPerson
+                if (who != null && who.zoneFloors().isNotEmpty()) {
                     val nowMs = SystemClock.elapsedRealtime()
                     // Only credit time we were actually reading through. A gap
                     // longer than a couple of polls is a strap dropout, and the
                     // seconds inside it belong to no zone.
                     if (lastZoneAt > 0L && nowMs - lastZoneAt < ZONE_MAX_GAP_MS) {
-                        val z = zoneIndex(pulse.toDouble() / walkerHrMax)
-                        zoneSecs[z] += (nowMs - lastZoneAt) / 1000.0
+                        zoneSecs[who.zoneOf(pulse)] += (nowMs - lastZoneAt) / 1000.0
                     }
                     lastZoneAt = nowMs
                 }
@@ -3288,6 +3156,7 @@ class MainActivity : Activity() {
             if (route != null) routeTick(sessionDistance) else planTick(elapsedNow)
         }
         val step = currentStep()
+        val floors = walkerPerson?.zoneFloors() ?: emptyList()
 
         return Snapshot(
             speed = speed,
@@ -3318,8 +3187,12 @@ class MainActivity : Activity() {
             avgPulse = if (pulseSamples > 0) (pulseSum / pulseSamples).toInt() else 0,
             maxPulse = maxPulse,
             hrMax = walkerHrMax,
-            zoneSecs = if (walkerHrMax > 0) zoneSecs.map { Math.round(it).toInt() }
+            zoneSecs = if (floors.isNotEmpty()) zoneSecs.map { Math.round(it).toInt() }
                        else emptyList(),
+            zoneFloors = floors,
+            zone = walkerPerson?.zoneOf(pulse) ?: 0,
+            power = Math.round(powerNow(speed, incline)).toInt(),
+            lapPower = lapLive?.avgPower ?: 0,
             achievements = earned,
             who = walker,
             whoId = cfg.person(walker)?.id ?: "",
@@ -3349,7 +3222,6 @@ class MainActivity : Activity() {
             // how fast it is walked, so it does not claim one.
             planClimbM = route?.climbM ?: 0.0,
             planPeakIncline = planSteps.maxOfOrNull { it.incline } ?: 0.0,
-            summaryLine = summaryLine,
             planElapsed = planElapsed,
             planLap = planLap,
             planLoops = planLoops,
@@ -3633,7 +3505,6 @@ class MainActivity : Activity() {
             // Same rule accumulate() uses, so a repaint between two polls
             // cannot show a segment number from the walk before this one.
             segment = if (steps.isEmpty() || stepIndex < 0) 0 else stepIndex + 1,
-            summaryLine = summaryLine,
             targetSpeed = targetKph,
             targetIncline = targetGrade,
             elapsed = elapsedSec(),
@@ -3964,7 +3835,6 @@ class MainActivity : Activity() {
         headphones.stop()
         // The button would otherwise outlive the thing it switches back to.
         stopService(Intent(this, SwitchBubble::class.java))
-        voice.close()
         mqtt.close()
         conn.close()
         try { unregisterReceiver(permissionReceiver) } catch (_: IllegalArgumentException) {}
