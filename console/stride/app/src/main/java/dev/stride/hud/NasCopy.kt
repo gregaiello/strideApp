@@ -67,6 +67,19 @@ class NasCopy(
     @Volatile private var state = "idle"      // idle | working | ok | error
     @Volatile private var message = ""
     @Volatile private var lastSent = ""
+    /**
+     * The copy's own outcome, apart from [state]/[message], which answer CHECK
+     * and SET UP. Copying used to report through those too and finish on
+     * "Ready" — the same word it showed before anything was sent — so a SEND
+     * NOW that worked looked exactly like one that had not started
+     * (2026-11-09). This says what happened and when, in the row the button
+     * is in.
+     */
+    @Volatile private var sendState = "idle"   // idle | working | ok | error
+    @Volatile private var sendMessage = ""
+    /** elapsedRealtime of the last finished copy: the wall clock on this
+     *  console can be years out, a duration cannot. */
+    @Volatile private var sendAt = 0L
     @Volatile private var routesState = "idle"
     @Volatile private var routesMessage = ""
 
@@ -97,6 +110,9 @@ class NasCopy(
         .put("message", message)
         .put("pending", pendingCount())
         .put("lastSent", lastSent)
+        .put("sendState", sendState)
+        .put("sendMessage", sendMessage)
+        .put("sendAgoSec", if (sendAt > 0) (android.os.SystemClock.elapsedRealtime() - sendAt) / 1000 else -1)
         .put("routesState", routesState)
         .put("routesMessage", routesMessage)
         .toString()
@@ -364,10 +380,19 @@ class NasCopy(
     }
 
     private fun drain() {
-        val queued = pendingDir.listFiles()?.sortedBy { it.name } ?: return
-        if (queued.isEmpty() || !configured()) return
+        if (!configured()) return
+        val queued = pendingDir.listFiles()?.sortedBy { it.name } ?: emptyList()
+        if (queued.isEmpty()) {
+            // Still an answer: a SEND NOW with nothing to send must say so,
+            // not leave the last outcome on screen as if it were this one.
+            sendState = "ok"; sendMessage = "Nothing waiting: every walk is on the NAS"
+            sendAt = android.os.SystemClock.elapsedRealtime()
+            return
+        }
         val fitDir = ctx.getExternalFilesDir("fit") ?: File(ctx.filesDir, "fit")
-        state = "working"; message = "Copying ${queued.size} walk(s)…"
+        sendState = "working"
+        sendMessage = "Copying ${queued.size} walk${if (queued.size == 1) "" else "s"}…"
+        var copied = 0
         try {
             withSftp { sftp ->
                 val base = baseOf(sftp)
@@ -383,15 +408,22 @@ class NasCopy(
                     try { sftp.rm("$folder/${fit.name}") } catch (_: SftpException) {}
                     sftp.rename(part, "$folder/${fit.name}")
                     marker.delete()
+                    copied++
                     lastSent = fit.name
                     Log.i(TAG, "nas: copied ${fit.name} to $folder")
                 }
             }
-            state = "ok"; message = "Ready"
+            if (state == "error") { state = "ok"; message = "Ready" }
+            sendState = "ok"
+            sendMessage = "Copied $copied walk${if (copied == 1) "" else "s"}" +
+                if (lastSent.isNotEmpty()) " · last $lastSent" else ""
         } catch (e: Exception) {
             state = "error"; message = explain(e)
+            sendState = "error"
+            sendMessage = (if (copied > 0) "Copied $copied, then: " else "") + explain(e)
             Log.w(TAG, "nas: copy failed, ${pendingCount()} waiting: ${e.message}")
         }
+        sendAt = android.os.SystemClock.elapsedRealtime()
     }
 
     private fun <T> withSftp(block: (ChannelSftp) -> T): T {

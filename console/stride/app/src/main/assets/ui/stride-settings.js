@@ -1095,6 +1095,10 @@
     sendWrap.style.cssText = 'display:flex;align-items:center';
     sendWrap.appendChild(press(el('button', 'sx-pill', 'SEND NOW'), function () {
       try { bridge().nasSendNow(); } catch (e) {}
+      // Shown at once: the worker may take a moment to pick it up, and a
+      // press with no answer for that moment reads as a missed press.
+      sendState.innerHTML = '<i class="sx-dot sx-busy"></i>Sending…';
+      nasWas = '';
       setTimeout(drawNas, 300);
     }));
     var forget = press(el('button', 'sx-pill sx-warn', 'FORGET'), function () {
@@ -1105,21 +1109,43 @@
     sendWrap.appendChild(forget);
     var sendRow = row('Waiting to copy', 'Walks the NAS missed are tried again after the next one.',
       sendWrap);
+    /* The copy's own outcome, under its own row. It used to share the CHECK
+       line above, which settled back on "Ready" when a copy finished — the
+       same word it showed before — so SEND NOW never visibly finished. */
+    var sendState = el('div', 'sx-state', '');
+    sendState.style.cssText = 'display:flex;align-items:center;margin-top:12px;line-height:1.35';
+    sendRow.querySelector('.sx-lbl').appendChild(sendState);
     g6.appendChild(sendRow);
     sc.appendChild(g6);
 
     var nasWas = '';
+    /* " · just now", " · 4 min ago". Coarse on purpose: the status is polled
+       every tick and a seconds counter would redraw the row for nothing. */
+    function agoText(sec) {
+      if (sec == null || sec < 0) return '';
+      if (sec < 60) return ' · just now';
+      if (sec < 3600) return ' · ' + Math.floor(sec / 60) + ' min ago';
+      return ' · ' + Math.floor(sec / 3600) + ' h ago';
+    }
     function drawNas() {
       var st = {};
       try { st = JSON.parse(bridge().nasStatus()); } catch (e) {}
       var dot = st.state === 'ok' ? 'sx-ok' : st.state === 'error' ? 'sx-bad'
               : st.state === 'working' ? 'sx-busy' : '';
       var text = st.message || (st.configured ? 'Ready' : 'Not set up');
-      var key = dot + text + st.pending;
+      var sdot = st.sendState === 'ok' ? 'sx-ok' : st.sendState === 'error' ? 'sx-bad'
+               : st.sendState === 'working' ? 'sx-busy' : '';
+      var stext = st.sendMessage
+        ? st.sendMessage + (st.sendState !== 'working' ? agoText(st.sendAgoSec) : '')
+        : (st.pending ? st.pending + (st.pending === 1 ? ' walk' : ' walks') + ' not copied yet'
+                      : 'Nothing waiting');
+      var key = dot + text + st.pending + sdot + stext;
       if (key === nasWas) return;   // redrawn only on change, like the grant row
       nasWas = key;
       nasState.innerHTML = '<i class="sx-dot ' + dot + '"></i>' +
         String(text).replace(/</g, '&lt;');
+      sendState.innerHTML = '<i class="sx-dot ' + sdot + '"></i>' +
+        String(stext).replace(/</g, '&lt;');
       sendRow.style.display = st.configured ? '' : 'none';
       sendWrap.firstChild.textContent = 'SEND NOW' + (st.pending ? ' (' + st.pending + ')' : '');
     }
