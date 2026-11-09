@@ -92,6 +92,54 @@ class FitExportTest {
         assertEquals(14, bytes[0].toInt())
         assertEquals(".FIT", String(bytes, 8, 4, Charsets.US_ASCII))
         assertEquals(0, FitWriter.crc(bytes))
-        assertEquals(listOf(f.name), out.list()!!.toList())   // no .tmp left behind
+        // No .tmp left behind; .order is the ring's record of write order.
+        assertEquals(listOf(".order", f.name), out.list()!!.sorted())
+    }
+
+    /** One minute apart, so every export gets its own name. */
+    private fun walks(recs: File, out: File, n: Int, from: Long = start2026): List<File> =
+        (0 until n).map { i ->
+            FitExport.export(recording(recs, from + i * 60_000L, from + i * 60_000L, "Ann"),
+                out, FitIdentity.GENERIC, rome)!!
+        }
+
+    @Test fun ringKeepsTheLastTen() {
+        val recs = tmp.newFolder(); val out = tmp.newFolder()
+        val made = walks(recs, out, 13)
+        val gone = FitExport.prune(out, recs, emptySet())
+        assertEquals(made.take(3).map { it.name }, gone.sorted())
+        assertEquals(made.drop(3).reversed(), FitExport.newestFirst(out))
+        assertEquals(FitExport.KEEP, Recording.list(recs).size)
+    }
+
+    /** Today's walk named 2010 by a clock NTP has not reached is still the newest. */
+    @Test fun ringGoesByWriteOrderNotByName() {
+        val recs = tmp.newFolder(); val out = tmp.newFolder()
+        walks(recs, out, 10)
+        val late = walks(recs, out, 1, from = start2010).single()
+        assertTrue(late.name, late.name.startsWith("2010-"))
+        FitExport.prune(out, recs, emptySet())
+        assertEquals(late, FitExport.newestFirst(out).first())
+        assertTrue(late.exists())
+    }
+
+    /** A NAS asleep for a fortnight must not cost the fortnight's walks. */
+    @Test fun ringKeepsWalksStillWaitingForTheNas() {
+        val recs = tmp.newFolder(); val out = tmp.newFolder()
+        val made = walks(recs, out, 12)
+        FitExport.prune(out, recs, setOf(made[0].name))
+        assertTrue(made[0].exists())
+        assertTrue(!made[1].exists())
+        assertEquals(FitExport.KEEP + 1, FitExport.newestFirst(out).size)
+    }
+
+    /** A recording not yet made into a .fit is a walk not yet saved. */
+    @Test fun ringKeepsUnexportedRecordings() {
+        val recs = tmp.newFolder(); val out = tmp.newFolder()
+        walks(recs, out, 11)
+        val raw = recording(recs, start2026 - 3_600_000L, start2026 - 3_600_000L, "Ann")
+        FitExport.prune(out, recs, emptySet())
+        assertTrue(raw.exists())
+        assertEquals(listOf(raw), FitExport.pending(recs))
     }
 }

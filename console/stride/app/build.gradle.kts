@@ -106,6 +106,12 @@ dependencies {
     // dependencies of its own; the maintained fork of the original JSch.
     implementation("com.github.mwiede:jsch:0.2.20")
 
+    // Fork-only: draws the QR code a phone scans to download a walk
+    // (PhoneShare). Pure Java, no dependencies, a few hundred lines. The
+    // console has no internet, so a page could not fetch one, and a QR
+    // encoder written here would be Reed-Solomon by hand for no gain.
+    implementation("io.nayuki:qrcodegen:1.8.0")
+
     // Test-only, so the APK still ships with only the two above.
     // org.json is here because android.jar's copy is stubs: on the JVM every
     // method returns null or 0, and a JSON round-trip test would be testing

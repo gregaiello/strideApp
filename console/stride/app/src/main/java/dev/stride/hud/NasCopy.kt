@@ -104,6 +104,9 @@ class NasCopy(
 
     fun pendingCount(): Int = pendingDir.listFiles()?.size ?: 0
 
+    /** The .fit names still to copy, which the ten-walk ring must not delete. */
+    fun pendingNames(): Set<String> = pendingDir.listFiles()?.map { it.name }?.toSet() ?: emptySet()
+
     fun status(): String = JSONObject()
         .put("configured", configured())
         .put("state", state)

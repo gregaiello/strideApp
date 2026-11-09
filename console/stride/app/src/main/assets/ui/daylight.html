@@ -461,6 +461,8 @@ button{font-family:inherit;color:inherit;background:none;border:none;text-align:
   <div class="h" id="sumHead">Nice work.</div>
   <div class="sumdate" id="sumDate" hidden>Date unknown: the console clock was not set during this workout.</div>
   <button class="lapspill" id="lapsPill" hidden>LAPS</button>
+  <!-- Mirrors the laps pill: the walk's .fit to a phone, by QR code (fork-only). -->
+  <button class="lapspill" id="phonePill" style="left:44px;right:auto">TO PHONE &rsaquo;</button>
   <div class="lapsheet" id="lapSheet" hidden><div class="lk">Laps</div><div class="laptable"><table><thead><tr><th>Lap</th><th>Time</th><th>Distance</th><th>Pace</th><th>Avg HR</th><th>Climb</th></tr></thead><tbody id="lapRows"></tbody></table></div><div class="lhint">Tap anywhere to close</div></div>
   <svg viewBox="0 0 1192 150" preserveAspectRatio="none">
     <path id="sumFill" fill="#dcd7c9"/>
@@ -718,6 +720,7 @@ tap($('btnDone'),   () => Stride.home());
 tap($('btnLap'), () => Stride.lap());
 tap($('lapsPill'), () => { $('lapSheet').hidden = false; });
 tap($('lapSheet'), () => { $('lapSheet').hidden = true; });
+tap($('phonePill'), () => STRIDE.phoneSheet('walk'));
 tap($('btnFan'),    () => Stride.fan());
 
 STRIDE.stepper($('btnSpeedUp'),     d => Stride.speed(d),    0.1, 0.5);

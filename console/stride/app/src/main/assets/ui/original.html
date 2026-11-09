@@ -297,6 +297,10 @@ button.pulse{animation:pulse .9s ease-out 2}
 .laptable td{font-size:20px;font-weight:300;padding:4px 22px;text-align:right}
 .laptable td:first-child,.laptable th:first-child{text-align:left;color:var(--ink-dim)}
 .summary .done button{width:280px;max-width:none;height:88px;font-size:19px}
+.phonepill{position:absolute;left:44px;top:40px;z-index:2;height:56px;padding:0 26px;
+  background:transparent;color:var(--accent);border:2px solid var(--track-line);border-radius:28px;
+  font:inherit;font-size:14px;letter-spacing:.2em;touch-action:manipulation}
+.phonepill.down{background:rgba(57,224,255,.12)}
 
 /* ---- welcome sub-steps --------------------------------------------------
    Walk → Casual or Guided → duration and shape. Purely client side: nothing
@@ -564,6 +568,9 @@ button.pulse{animation:pulse .9s ease-out 2}
 
 <!-- ======================= SUMMARY ==================================== -->
 <div class="screen" id="screenSummary">
+  <!-- The walk's .fit to a phone, by QR code (fork-only). Out of the column
+       so it moves nothing in it. -->
+  <button class="phonepill" id="phonePill">TO PHONE &rsaquo;</button>
   <div class="summary">
     <div class="head" id="sumHead">Nice work</div>
     <!-- Under the kicker, not between it and the headline. "Nice work / WALK
@@ -936,6 +943,7 @@ tap($('btnStop'),  () => {
 tap($('btnResume'), () => { $('confirm').classList.remove('show'); Stride.resume(); });
 tap($('btnEnd'),    () => { $('confirm').classList.remove('show'); Stride.end(); });
 tap($('btnDone'),   () => Stride.home());
+tap($('phonePill'), () => STRIDE.phoneSheet('walk'));
 // The board only pulses mode 8 on removal, so we can't sense the key coming
 // back — you tell us. If it is still out, the next poll raises this again.
 tap($('btnDmkOk'),  () => Stride.ackDmk());

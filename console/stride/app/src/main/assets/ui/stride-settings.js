@@ -1069,6 +1069,20 @@
        every walker shares the one NAS login, and each gets a folder named
        after them. The password box is never saved; it goes to nasSetup once
        and is cleared, and STRIDE logs in with its own key from then on. */
+    /* To a phone (fork-only; see PhoneShare.kt). The summary's TO PHONE is
+       the one walk just done; this is the last ten, for a walk whose summary
+       was tapped past before anybody reached for a phone. */
+    if (has('phoneShare')) {
+      var gp = group('To your phone');
+      gp.appendChild(row('Recent walks',
+        'A code to scan with a phone on the same Wi-Fi. It lists the last ten walks ' +
+        'kept here, to download and upload at strava.com/upload.',
+        press(el('button', 'sx-pill', 'SHOW CODE'), function () {
+          try { global.STRIDE.phoneSheet('list'); } catch (e) {}
+        })));
+      sc.appendChild(gp);
+    }
+
     if (!has('nasStatus')) return;
     var g6 = group('Copy to NAS');
     g6.appendChild(row('NAS address',

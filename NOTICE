@@ -21,6 +21,14 @@ SFTP client that copies walks to a NAS (fork-only). Distributed under a
 BSD-style licence; see https://github.com/mwiede/jsch for the licence text and
 the source.
 
+QR Code generator library (Nayuki) — io.nayuki:qrcodegen, version 1.8.0
+--------------------------------------------------------------------------------
+Bundled unmodified in the console application (console/stride), where it draws
+the QR code a phone scans to download a walk (PhoneShare, fork-only).
+Copyright (c) Project Nayuki, distributed under the MIT License; see
+https://www.nayuki.io/page/qr-code-generator-library for the licence text and
+the source.
+
 (Until 2026-11-09 the console also bundled the Eclipse Paho MQTT client, for
 Home Assistant. This fork no longer includes it.)
 

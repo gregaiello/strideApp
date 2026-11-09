@@ -69,9 +69,81 @@ object FitExport {
             part.delete()
             throw java.io.IOException("could not rename ${part.name}")
         }
+        remember(outDir, out.name)
         // Last, so a kill before here means a retry. The worst a retry can
         // do is a duplicate with a `_2`, never a missing walk.
         marker(recording).createNewFile()
         return out
+    }
+
+    /**
+     * How many walks the console keeps, as .fit files and as the recordings
+     * they were made from. Past this the oldest go, so the console is a ring
+     * of the last ten rather than a store that grows until the disk is full
+     * (2026-11-09, at the user's request: the NAS is where walks are kept).
+     */
+    const val KEEP = 10
+
+    /**
+     * The order the files were written in, one name per line, oldest first.
+     *
+     * Kept because neither the names nor the file times can say which walk
+     * is newest on this console. Both come off the wall clock, which reads
+     * 2010 until NTP lands and sometimes all walk — so a walk recorded before
+     * the clock was right is named `2010-01-01_…`, sorts as the oldest file
+     * there is, and would be the first one a ring by name threw away: the
+     * walk just finished, still on the summary screen with its QR code.
+     */
+    private fun orderFile(outDir: File) = File(outDir, ".order")
+
+    @Synchronized
+    private fun remember(outDir: File, name: String) {
+        val f = orderFile(outDir)
+        val names = (if (f.exists()) f.readLines() else emptyList()).filter { it.isNotBlank() && it != name }
+        // Rewritten whole and short, rather than appended for ever.
+        val kept = (names + name).takeLast(KEEP * 4)
+        val part = File(outDir, ".order.tmp")
+        part.writeText(kept.joinToString("\n", postfix = "\n"))
+        if (!part.renameTo(f)) { f.delete(); part.renameTo(f) }
+    }
+
+    /**
+     * Every finished .fit, newest first. A file the order does not know (one
+     * written before it existed) counts as older than every file it does
+     * know, and those sort among themselves by name.
+     */
+    @Synchronized
+    fun newestFirst(outDir: File): List<File> {
+        val files = outDir.listFiles { f -> f.isFile && f.name.endsWith(".fit") } ?: return emptyList()
+        val f = orderFile(outDir)
+        val rank = (if (f.exists()) f.readLines() else emptyList())
+            .withIndex().associate { (i, n) -> n to i }
+        return files.sortedWith(compareByDescending<File> { rank[it.name] ?: -1 }
+            .thenByDescending { it.name })
+    }
+
+    /**
+     * Drops what is past the last [keep] walks.
+     *
+     * @param waiting names of .fit files still queued for the NAS. They stay
+     *   whatever their age: a NAS asleep for a fortnight must not mean the
+     *   fortnight's walks are gone before it wakes.
+     *
+     * Recordings go by the same count, but only ones already settled into a
+     * .fit (or judged too short): an unsettled one is a walk not yet exported,
+     * and deleting it would lose the walk.
+     *
+     * @return the names of the .fit files deleted.
+     */
+    @Synchronized
+    fun prune(outDir: File, recordingsDir: File, waiting: Set<String>, keep: Int = KEEP): List<String> {
+        val gone = newestFirst(outDir).drop(keep)
+            .filter { it.name !in waiting }
+            .filter { it.delete() }
+            .map { it.name }
+        Recording.list(recordingsDir).filter { marker(it).exists() }.drop(keep).forEach {
+            if (it.delete()) marker(it).delete()
+        }
+        return gone
     }
 }

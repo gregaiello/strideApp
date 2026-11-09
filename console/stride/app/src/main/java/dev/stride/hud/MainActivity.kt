@@ -1307,6 +1307,9 @@ class MainActivity : Activity() {
         @JavascriptInterface fun nasFetchRoutes() { nas.fetchRoutes() }
         @JavascriptInterface fun nasCheck() { nas.check() }
         @JavascriptInterface fun nasForget() { nas.forget() }
+        /** `walk` (the summary's file) or `list`; see PhoneShare.share. */
+        @JavascriptInterface fun phoneShare(what: String): String = phone.share(what)
+        @JavascriptInterface fun phoneDone() { phone.stopSoon() }
 
         @JavascriptInterface fun addPerson(name: String): String {
             cfg.addPerson(name)?.let { Log.i(TAG, "settings: added ${it.name} (${it.id})") }
@@ -2249,6 +2252,7 @@ class MainActivity : Activity() {
         recording?.let { r -> writeRecording { r.finish("interrupted", 0L) } }
         recording = null
         laps.start(0L, 0.0, 0.0, 0.0)
+        summaryWalk = PhoneShare.WalkFile.None
         recordedDistance = Odometer()
         lastSampleMs = -1L
         lapFlashUntil = 0L
@@ -2300,7 +2304,8 @@ class MainActivity : Activity() {
             } else {
                 r.finish("done", sessionStartWall(), sessionCalories)
                 Log.i(TAG, "recording: saved ${r.file.name}")
-                exportFit(r.file)
+                summaryWalk = PhoneShare.WalkFile.Writing
+                exportFit(r.file, forSummary = true)
             }
         } catch (e: Exception) {
             Log.w(TAG, "recording: could not close", e)
@@ -2325,16 +2330,43 @@ class MainActivity : Activity() {
      */
     private val fitExports = java.util.concurrent.Executors.newSingleThreadExecutor()
 
-    private fun exportFit(rec: File) {
+    private fun exportFit(rec: File, forSummary: Boolean = false) {
         fitExports.execute {
+            var made: File? = null
             try {
-                FitExport.export(rec, fitDir, fitIdentity())?.let {
+                made = FitExport.export(rec, fitDir, fitIdentity())
+                made?.let {
                     Log.i(TAG, "fit: wrote ${it.name}")
                     nas.enqueue(it, Recording.read(rec).walker)
                 }
             } catch (e: Exception) {
                 Log.w(TAG, "fit: export failed for ${rec.name}", e)
             }
+            if (forSummary) summaryWalk = made?.let { PhoneShare.WalkFile.Ready(it) }
+                ?: PhoneShare.WalkFile.None
+            pruneFits()
+        }
+    }
+
+    /**
+     * The summary's walk, for the code that hands it to a phone. Set when the
+     * walk ends rather than looked up when the code is scanned, because "the
+     * newest file" is a guess on a console whose clock can name today's walk
+     * 2010 — and a guest's walk, which has no file, would hand over somebody
+     * else's.
+     */
+    @Volatile private var summaryWalk: PhoneShare.WalkFile = PhoneShare.WalkFile.None
+
+    /** Serves the .fit files to a phone on the same Wi-Fi; see PhoneShare. */
+    private val phone by lazy { PhoneShare(fitDir) { summaryWalk } }
+
+    /** On the export thread, after each export: the console keeps ten walks. */
+    private fun pruneFits() {
+        try {
+            val gone = FitExport.prune(fitDir, recordingsDir, nas.pendingNames())
+            if (gone.isNotEmpty()) Log.i(TAG, "fit: ring of ${FitExport.KEEP}, dropped ${gone.joinToString()}")
+        } catch (e: Exception) {
+            Log.w(TAG, "fit: could not prune", e)
         }
     }
 
@@ -2428,7 +2460,10 @@ class MainActivity : Activity() {
         try {
             val backlog = FitExport.pending(recordingsDir)
             fitExports.execute { FitExport.sweepPartial(fitDir) }
-            backlog.forEach(::exportFit)
+            backlog.forEach { exportFit(it) }
+            // Once even with no backlog: a console updated to this build may
+            // be carrying months of walks from before there was a ring.
+            fitExports.execute { pruneFits() }
         } catch (e: Exception) {
             Log.w(TAG, "fit: could not list the backlog", e)
         }
@@ -3620,6 +3655,7 @@ class MainActivity : Activity() {
         abandonRecording()
         stopBeltBeforeLeaving()
         ftms.stop()
+        phone.stop()
         headphones.stop()
         // The button would otherwise outlive the thing it switches back to.
         stopService(Intent(this, SwitchBubble::class.java))

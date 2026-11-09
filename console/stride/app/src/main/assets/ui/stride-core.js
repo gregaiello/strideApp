@@ -1173,6 +1173,68 @@ function tap(el, fn) {
   return el;
 }
 
+/* ===========================================================================
+   TO A PHONE (fork-only, 2026-11-09)
+   ---------------------------------------------------------------------------
+   A QR code a phone on the same Wi-Fi scans to download a .fit, to upload to
+   Strava from its browser. `walk` is the walk on the summary, `list` the last
+   ten on the console. Kotlin starts the server and draws the code (see
+   PhoneShare.kt), so all this does is put it on the screen.
+
+   One sheet for all five interfaces, styled inline: a QR code needs black on
+   white and a quiet border whatever the palette, so there is nothing for an
+   interface to restyle, and five copies of it would be five chances to get
+   the contrast wrong. It is put away by a tap, or by itself after three
+   minutes so it never sits over a sleeping screen; either way the server is
+   told, and stops once a download under way has had time to finish.
+   =========================================================================== */
+var phoneOpen = null;
+function phoneSheet(what) {
+  if (phoneOpen) phoneOpen();
+  var r;
+  try { r = JSON.parse(global.Stride.phoneShare(what)); }
+  catch (e) { r = { ok: false, message: 'This build cannot send walks to a phone.' }; }
+
+  var o = document.createElement('div');
+  o.style.cssText = 'position:absolute;left:0;top:0;width:1280px;height:800px;z-index:200;' +
+    'background:rgba(5,7,8,.96);color:#eef3f4;display:flex;flex-direction:column;' +
+    'align-items:center;justify-content:center;text-align:center;font-family:inherit';
+  var kicker = what === 'walk' ? 'THIS WALK TO YOUR PHONE' : 'RECENT WALKS TO YOUR PHONE';
+  var html = '<div style="font-size:14px;letter-spacing:.32em;color:#8fa3a8;margin-bottom:26px">' +
+    kicker + '</div>';
+  if (r.ok) {
+    html += '<div style="width:420px;height:420px;background:#fff;border-radius:14px;' +
+      'padding:10px;box-sizing:border-box">' + r.qr + '</div>' +
+      '<div style="margin-top:26px;font-size:19px;line-height:1.5;color:#dfe7e9">' +
+      'Phone on the same Wi-Fi, camera at the code. ' +
+      (what === 'walk' ? 'The .fit downloads straight away;' : 'Pick a walk to download it;') +
+      '<br>then upload it at <b>strava.com/upload</b> in the phone\'s browser.</div>' +
+      '<div style="margin-top:12px;font-size:13px;color:#6f8287;letter-spacing:.04em">' +
+      esc(r.url) + '</div>';
+  } else {
+    html += '<div style="max-width:760px;font-size:22px;line-height:1.5;color:#dfe7e9">' +
+      esc(r.message || 'Not available.') + '</div>';
+  }
+  html += '<div style="margin-top:30px;font-size:12px;letter-spacing:.24em;color:#6f8287">' +
+    'TAP ANYWHERE TO CLOSE</div>';
+  o.innerHTML = html;
+  var svg = o.querySelector('svg');
+  if (svg) { svg.style.width = '100%'; svg.style.height = '100%'; svg.style.display = 'block'; }
+
+  var timer = null;
+  function close() {
+    if (phoneOpen !== close) return;
+    phoneOpen = null;
+    global.clearTimeout(timer);
+    if (o.parentNode) o.parentNode.removeChild(o);
+    try { global.Stride.phoneDone(); } catch (e) {}
+  }
+  phoneOpen = close;
+  timer = global.setTimeout(close, 3 * 60 * 1000);
+  tap(o, close);
+  document.body.appendChild(o);
+}
+
 /* Fine on a tap, coarse on a hold, the way the physical buttons behave.
    A flat coarse repeat was 3.6 km/h per second and the target "just took off";
    a uniformly slow one made a deliberate run to 18 km/h tedious. So it
@@ -1284,7 +1346,7 @@ var BRIDGE = ['choose', 'chooseGuided', 'chooseRoute', 'skipWarmup', 'skipCooldo
               'setSpeed',
               'resume', 'end', 'home', 'speed', 'incline', 'fan', 'setFan',
               'setWalker', 'ackDmk', 'dim', 'setUi', 'wakeBoard',
-              'lap'];
+              'lap', 'phoneDone'];
 
 /** @return true if this page is running without the console behind it. */
 function stub() {
@@ -1334,6 +1396,16 @@ function stub() {
         segments: [[0,200,6],[200,700,8],[700,1100,5],[1100,1600,2],
                    [1600,2100,-2],[2100,2500,-3],[2500,3030,0]] }
     ]);
+  };
+  /* A pretend code on a desktop: right size, right colours, scans as nothing. */
+  s.phoneShare = function (what) {
+    var d = '';
+    for (var y = 0; y < 29; y++) for (var x = 0; x < 29; x++)
+      if ((x * 7 + y * 13 + x * y) % 3 === 0) d += 'M' + (x + 4) + ',' + (y + 4) + 'h1v1h-1z';
+    return JSON.stringify({ ok: true, url: 'http://192.168.1.50:8080/0123456789abcdef/' +
+      (what === 'walk' ? 'walk' : ''), qr: '<svg xmlns="http://www.w3.org/2000/svg" ' +
+      'viewBox="0 0 37 37" shape-rendering="crispEdges"><rect width="37" height="37" fill="#fff"/>' +
+      '<path d="' + d + '" fill="#000"/></svg>' });
   };
   global.Stride = s;
   return true;
@@ -1718,6 +1790,7 @@ global.STRIDE = {
   currentUi: currentUi,
 
   tap: tap,
+  phoneSheet: phoneSheet,
   stepper: stepper,
   hold: hold,
   suppress: suppress,
