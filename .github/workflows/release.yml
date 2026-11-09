@@ -2,18 +2,10 @@
 ##
 ## Why this runs here and not on a laptop
 ## --------------------------------------
-## `app/build.gradle.kts` reads the broker host, username and password out of
-## `local.properties` and bakes them into BuildConfig. That file is gitignored
-## and every development machine has one — so an APK built locally carries a
-## working set of somebody's broker credentials to whoever downloads it.
-##
-## A runner has no `local.properties`. The three `secret()` lookups fall back to
-## empty strings, which is exactly right for a public build: Settings.kt only
-## uses BuildConfig as the *seed* for its stored preferences, so whoever
-## installs this configures their own broker on the console and never sees ours.
-##
-## The `no local mqtt credentials` step below enforces that rather than trusting
-## it, because the failure is silent and unrecoverable once published.
+## A runner has a clean checkout and no `local.properties` of anybody's, so
+## the published APK carries nothing from a development machine. (It used to
+## matter more: the build baked MQTT broker credentials in from that file.
+## This fork has no Home Assistant or MQTT since 2026-11-09.)
 name: release
 
 on:
@@ -66,22 +58,13 @@ jobs:
           fi
           echo "$KEYSTORE_B64" | base64 --decode > "$HOME/stride-release.jks"
           # Written fresh, and deliberately containing nothing but the four
-          # signing lines. No mqtt.* keys, which is what keeps the broker
-          # credentials out of the published build.
+          # signing lines.
           cat > console/stride/local.properties <<EOF
           stride.keystore=$HOME/stride-release.jks
           stride.keystore.password=$KEYSTORE_PASSWORD
           stride.key.alias=$KEY_ALIAS
           stride.key.password=$KEY_PASSWORD
           EOF
-
-      - name: Refuse to build with local mqtt credentials
-        run: |
-          if grep -qE '^\s*mqtt\.' console/stride/local.properties; then
-            echo "::error::local.properties carries mqtt.* keys — those would be compiled into the APK and published. Refusing."
-            exit 1
-          fi
-          echo "ok: no broker credentials in this build"
 
       - name: Build
         working-directory: console/stride

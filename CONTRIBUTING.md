@@ -58,7 +58,6 @@ on a particular state, or press the number keys to jump between them.
 | `console/stride/` | The Android app. Kotlin drives the machine, HTML draws the screen. |
 | `console/usbprobe/` | Read-only board identifier. Writes nothing, moves nothing. |
 | `protocol/` | The [FitPro serial protocol](protocol/FITPRO_PROTOCOL.md), decoded. Start here for a different machine. |
-| `homeassistant/` | Optional coach, reminders and dashboard scripts. |
 | `tools/unchain.sh` | Disables the iFit packages in the order that matters. |
 
 ## If you touch anything that moves the belt

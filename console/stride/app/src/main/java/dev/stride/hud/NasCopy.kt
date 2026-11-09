@@ -17,8 +17,8 @@ import java.util.concurrent.Executors
  * Copies each walk's .fit to a NAS over SFTP, into a folder named after the
  * walker in the NAS account's home: `~/Gre/2026-11-05_2017_Gre.fit`.
  *
- * Fork-only. It is the one thing here that needs a library besides Paho
- * (JSch, pure Java), because SSH is not something to write by hand.
+ * Fork-only. It is the one thing here that needs a library (JSch, pure
+ * Java), because SSH is not something to write by hand.
  *
  * **Setup is once.** STRIDE makes its own RSA key, logs in with the NAS
  * password one time to add that key to `~/.ssh/authorized_keys`, and keeps

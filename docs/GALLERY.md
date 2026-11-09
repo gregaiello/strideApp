@@ -49,8 +49,7 @@ Same walk in Pacer, drawn as a lane:
 On the treadmill's own screen. No config files, no rebuild.
 
 ### Who walks
-Everyone gets their own totals. Coaching and recording are per person, and can
-be linked to a Home Assistant `person`.
+Everyone gets their own totals and history. Guests are never recorded.
 
 ![Who walks](screenshots/settings-who-walks.png)
 
@@ -62,8 +61,8 @@ filters on service UUID, not brand, so most straps work.
 
 ### Display
 Kilometres or miles, and everything that comes with living with a screen
-that's on all day. Units change every screen and everything published; the
-board stays metric underneath either way.
+that's on all day. Units change every screen; the board stays metric
+underneath either way.
 
 ![Display](screenshots/settings-display.png)
 

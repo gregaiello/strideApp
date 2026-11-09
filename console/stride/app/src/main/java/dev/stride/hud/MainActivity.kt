@@ -26,7 +26,7 @@ import kotlin.concurrent.thread
 /**
  * STRIDE HUD.
  *
- * Kotlin owns the treadmill (USB + FitPro + MQTT) and the workout session; the
+ * Kotlin owns the treadmill (USB + FitPro) and the workout session; the
  * UI is an HTML page in a WebView so it can be designed and iterated in a
  * browser. State is pushed to JS at poll rate; button presses come back over
  * the `Stride` bridge.
@@ -193,7 +193,6 @@ class MainActivity : Activity() {
          *  must not spend a command" rule needs, and short enough that a
          *  refusal surfaces while the person is still looking at the button. */
         const val WRITE_TRIES = 15
-        const val MQTT_EVERY_MS = 1000L
 
         /**
          * How long the board may say nothing before it counts as not answering.
@@ -217,25 +216,6 @@ class MainActivity : Activity() {
          * a straight answer rather than a spinner.
          */
         const val WAKE_WAIT_MS = 8_000L
-
-        /**
-         * How long to wait before trying the *first* MQTT connection again,
-         * and the ceiling the wait backs off to.
-         *
-         * Paho reconnects by itself, but only once it has connected once: a
-         * first attempt that throws is final, and nothing after it ever tries
-         * again. On a console that starts itself at boot that is the common
-         * case, not the rare one — this machine autostarts 0.3 s after the
-         * boot broadcast and its Wi-Fi associates about ten seconds later, so
-         * the one attempt reliably lands in the window where there is no
-         * network to connect over. It came back up, ran a whole walk with the
-         * coach mute, and logged "mqtt down, event not sent" thirty times.
-         *
-         * Backing off to a minute rather than hammering: nothing here is
-         * urgent, and a broker that is down is usually down for a while.
-         */
-        const val MQTT_RETRY_MS = 5_000L
-        const val MQTT_RETRY_MAX_MS = 60_000L
 
         /**
          * The selectable interfaces, in the order the settings screen shows them.
@@ -472,7 +452,6 @@ class MainActivity : Activity() {
     private val prefs by lazy { getSharedPreferences(PREFS, Context.MODE_PRIVATE) }
 
     private val conn by lazy { FitProConnection(this) }
-    private val mqtt = MqttPublisher()
     private val cfg by lazy { Settings(this) }
     /* The strap hunt is held off while an FTMS client is subscribed: this
        console's radio cannot scan as a central and hold a peripheral link at
@@ -646,8 +625,7 @@ class MainActivity : Activity() {
     /** How many times we have had to re-command a stop. Reset when it takes. */
     @Volatile private var stopNags = 0
 
-    /** Wall clock and uptime at which the current runaway was first seen. */
-    private var runawayAtWall = 0L
+    /** Uptime at which the current runaway was first seen. */
     private var runawayAtUptime = 0L
     private var runawayPeakKph = 0.0
 
@@ -1315,35 +1293,10 @@ class MainActivity : Activity() {
 
         @JavascriptInterface fun settingsJson(): String = cfg.json().toString()
 
-        /**
-         * Who Home Assistant knows about, minus anyone already added here.
-         *
-         * Filtered on the console rather than in the settings screen so the
-         * "already added" test uses the same `haPerson` link the rest of the
-         * app does, instead of matching names in JavaScript.
-         */
-        @JavascriptInterface fun haPeople(): String {
-            val linked = cfg.people().map { it.haPerson }.filter { it.isNotEmpty() }.toSet()
-            val taken = cfg.people().map { it.name.lowercase() }.toSet()
-            val out = JSONArray()
-            try {
-                val arr = JSONArray(haPersons)
-                for (i in 0 until arr.length()) {
-                    val o = arr.getJSONObject(i)
-                    if (o.optString("entity_id") in linked) continue
-                    if (o.optString("first").lowercase() in taken) continue
-                    out.put(o)
-                }
-            } catch (e: Exception) {
-                Log.w(TAG, "persons: cannot parse (${e.message})")
-            }
-            return out.toString()
-        }
-
         /** Everything arrives as a string; [Settings.set] types it by key. */
         @JavascriptInterface fun saveSetting(key: String, value: String) {
             cfg.set(key, value)
-            Log.i(TAG, "settings: $key = ${if (key == Settings.MQTT_PASS) "***" else value}")
+            Log.i(TAG, "settings: $key = $value")
             applySetting(key)
         }
 
@@ -1360,26 +1313,10 @@ class MainActivity : Activity() {
             return cfg.json().toString()
         }
 
-        /** Add somebody from Home Assistant, linked rather than merely named. */
-        @JavascriptInterface fun addHaPerson(entityId: String, first: String): String {
-            cfg.addPerson(first, entityId)?.let {
-                Log.i(TAG, "settings: added ${it.name} linked to $entityId")
-            }
-            return cfg.json().toString()
-        }
-
         @JavascriptInterface fun removePerson(name: String): String {
             cfg.savePeople(cfg.people().filterNot { it.name == name })
             // Whoever is mid-walk keeps walking; only the list changed.
             Log.i(TAG, "settings: removed $name")
-            return cfg.json().toString()
-        }
-
-        @JavascriptInterface fun setPersonFlag(name: String, flag: String, on: Boolean): String {
-            cfg.savePeople(cfg.people().map {
-                if (it.name != name) it
-                else if (flag == "publish") it.copy(publish = on) else it
-            })
             return cfg.json().toString()
         }
 
@@ -1497,26 +1434,6 @@ class MainActivity : Activity() {
             .put("address", cfg.hrAddr())
             .toString()
 
-        /**
-         * Connect with whatever is currently saved and say what happened.
-         *
-         * Runs off the UI thread — Paho's connect blocks for up to the
-         * connection timeout, and five seconds of frozen console is not a
-         * diagnostic. The screen polls [mqttStatus] for the answer.
-         */
-        @JavascriptInterface fun mqttTest() {
-            Thread {
-                applyMqttSettings()
-                Log.i(TAG, "settings: mqtt test — ${if (mqtt.connected) "connected" else "failed"}")
-            }.start()
-        }
-
-        @JavascriptInterface fun mqttStatus(): String = JSONObject()
-            .put("enabled", cfg.haEnabled())
-            .put("connected", mqtt.connected)
-            .put("broker", cfg.mqttHost())
-            .toString()
-
         /** What the board says it can do. Reported, never set — see Settings. */
         @JavascriptInterface fun boardLimits(): String = JSONObject()
             .put("minGrade", minGrade).put("maxGrade", maxGrade)
@@ -1623,91 +1540,12 @@ class MainActivity : Activity() {
     // --- applying settings ----------------------------------------------------
 
     /**
-     * Bumped on every apply, so a retry still sleeping against the old broker
-     * settings knows it has been superseded and stops.
-     */
-    private val mqttGen = java.util.concurrent.atomic.AtomicInteger(0)
-
-    /**
-     * Connect, reconnect or stay down, according to what is configured.
-     *
-     * Called at start-up and whenever a broker setting changes. **A console
-     * with no broker set is a working treadmill, not a broken one** — it does
-     * not retry, does not warn, and does not log an error every poll. A
-     * console with a broker set that could not be reached is a different
-     * thing, and does keep trying: see [retryMqtt].
-     */
-    private fun applyMqttSettings() {
-        val gen = mqttGen.incrementAndGet()
-        if (!cfg.haEnabled()) {
-            mqtt.close()
-            Log.i(TAG, "mqtt: not configured, running standalone")
-            return
-        }
-        mqtt.reconfigure(cfg.brokerUri(), cfg.mqttUser(), cfg.mqttPass(), cfg.mqttPrefix())
-        // Re-registered because reconfigure() dropped the client, and a clean
-        // session forgets subscriptions with it.
-        mqtt.onMessage(mqtt.uiTopic, ::onUiCommand)
-        mqtt.onMessage(mqtt.personsTopic, ::onPersons)
-        mqtt.onMessage(mqtt.routesTopic, routes::accept)
-        val err = mqtt.connect()
-        if (err == null) {
-            if (mqtt.connected) mqtt.publishUi(chosenUi())
-            return
-        }
-        Log.w(TAG, "mqtt: $err")
-        retryMqtt(gen)
-    }
-
-    /**
-     * Keep trying until the broker answers, then hand over to Paho.
-     *
-     * **On its own thread, deliberately.** The start-up call to
-     * [applyMqttSettings] is made from [pollLoop], and sleeping there would
-     * stall telemetry and every board write behind a broker that
-     * has nothing to do with any of them. A treadmill whose belt stops
-     * responding because Home Assistant is down is a far worse machine than
-     * one that walks fine without Home Assistant.
-     *
-     * Stops at the first success rather than staying resident: from there
-     * Paho's own `automaticReconnect` owns the connection, and it is better at
-     * it than this is. The gap being filled is only the one Paho does not
-     * cover — the first connection, which it never retries.
-     */
-    private fun retryMqtt(gen: Int) {
-        Thread {
-            var wait = MQTT_RETRY_MS
-            while (gen == mqttGen.get() && running) {
-                try {
-                    Thread.sleep(wait)
-                } catch (e: InterruptedException) {
-                    return@Thread
-                }
-                // Settings changed, or HA was switched off, while we slept.
-                if (gen != mqttGen.get()) return@Thread
-                val err = mqtt.connect()
-                if (err == null) {
-                    Log.i(TAG, "mqtt: connected on retry")
-                    if (mqtt.connected) mqtt.publishUi(chosenUi())
-                    return@Thread
-                }
-                wait = (wait * 2).coerceAtMost(MQTT_RETRY_MAX_MS)
-                Log.w(TAG, "mqtt: $err — trying again in ${wait / 1000}s")
-            }
-        }.start()
-    }
-
-    /**
      * React to one setting having changed, where it needs more than being
      * stored. Anything read at the point of use — warm-up length, incline rate,
      * units — needs nothing here and is deliberately absent.
      */
     private fun applySetting(key: String) {
         when (key) {
-            Settings.HA_ENABLED, Settings.MQTT_HOST, Settings.MQTT_PORT,
-            Settings.MQTT_USER, Settings.MQTT_PASS, Settings.MQTT_TLS,
-            Settings.MQTT_PREFIX -> Thread { applyMqttSettings() }.start()
-
             Settings.BRIGHTNESS -> applyBrightness()
 
             Settings.HR_SOURCE, Settings.HR_ADDR -> applyStrap()
@@ -1716,7 +1554,6 @@ class MainActivity : Activity() {
 
             // A reset changes everything at once.
             "" -> {
-                Thread { applyMqttSettings() }.start()
                 applyBrightness()
                 applyStrap()
                 runOnUiThread { SwitchBubble.sync(this, cfg) }
@@ -1785,8 +1622,7 @@ class MainActivity : Activity() {
 
     private fun assetFor(name: String) = "file:///android_asset/ui/$name.html"
 
-    /** Both routes in — a tap on the settings screen and a publish from HA —
-     *  land here, so neither can switch under conditions the other refuses. */
+    /** Every switch lands here, so none can happen under conditions it refuses. */
     private fun switchUi(name: String) {
         if (Session.isMoving(session)) {
             Log.i(TAG, "ui: not switching to $name while the belt is moving")
@@ -1799,20 +1635,11 @@ class MainActivity : Activity() {
         if (name == chosenUi()) return
         prefs.edit().putString(PREF_UI, name).apply()
         Log.i(TAG, "ui: switching to $name")
-        mqtt.publishUi(name)
         runOnUiThread { web.loadUrl(assetFor(name)) }
     }
 
     /**
-     * Home Assistant's people, retained on the broker by ha/stride_persons.py.
-     *
-     * Held rather than acted on. The console offers them under "Add from Home
-     * Assistant" and somebody standing in front of it decides — a list arriving
-     * over MQTT is not permission to create walkers.
-     */
-    /**
-     * Routes from real walks. Unlike [haPersons] this is not a volatile field
-     * holding whatever last arrived — it is cached to disk, because the console
+     * Routes from GPX files on the NAS. Cached to disk, because the console
      * can boot with no network and a route that is not already here cannot be
      * fetched at the moment somebody is standing on the belt choosing it.
      */
@@ -1824,20 +1651,6 @@ class MainActivity : Activity() {
     /** The session's average pulse so far, or 0 if nothing ever read. */
     private fun avgPulseNow(): Int =
         if (pulseSamples > 0) (pulseSum / pulseSamples).toInt() else 0
-
-    @Volatile private var haPersons: String = "[]"
-
-    private fun onPersons(payload: String) {
-        haPersons = payload.trim().ifBlank { "[]" }
-        Log.i(TAG, "persons: received ${haPersons.length} bytes from HA")
-    }
-
-    /** A UI name published from Home Assistant. */
-    private fun onUiCommand(payload: String) {
-        val name = payload.trim().lowercase()
-        Log.i(TAG, "ui: requested \"$name\" over mqtt")
-        switchUi(name)
-    }
 
     /**
      * Start easing the belt down, and say whether there was anything to ease.
@@ -1981,14 +1794,10 @@ class MainActivity : Activity() {
         stopNags++
         runawayPeakKph = maxOf(runawayPeakKph, actualKph)
         if (stopNags == 1) {
-            runawayAtWall = System.currentTimeMillis()
             runawayAtUptime = SystemClock.elapsedRealtime()
-            val stamp = java.text.SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss", java.util.Locale.US)
-                .format(java.util.Date(runawayAtWall))
             recordIncident("BELT RUNNING UNATTENDED at ${"%.1f".format(actualKph)} km/h " +
                     "(session=${Session.name(session)}, boardMode=$lastBoardMode) " +
                     "— commanding stop")
-            mqtt.publishRunaway(true, actualKph, stamp, 0L)
         }
         if (stopNags == 1 || stopNags % 25 == 0) {
             Log.w(TAG, "belt still moving at ${"%.1f".format(actualKph)} km/h " +
@@ -2597,7 +2406,7 @@ class MainActivity : Activity() {
         // trade on a bench and no trade at all on a treadmill in a hallway.
         WebView.setWebContentsDebuggingEnabled(BuildConfig.DEBUG)
 
-        cfg.seedFromBuildConfig()
+        cfg.dropRetired()
         walker = cfg.defaultWalker()
         refreshWalkerHrMax()
         applyBrightness()
@@ -2720,13 +2529,7 @@ class MainActivity : Activity() {
         unlockWithRetries()
         readLimits()
         readSleepConfig()
-        mqtt.onMessage(mqtt.uiTopic, ::onUiCommand)
-        mqtt.onMessage(mqtt.personsTopic, ::onPersons)
-        mqtt.onMessage(mqtt.routesTopic, routes::accept)
-        applyMqttSettings()
-        mqtt.publishUi(chosenUi())
 
-        var sinceMqtt = 0L
         var rejects = 0
         while (running) {
             // enforceStopped comes first and outranks everything, including a
@@ -2909,17 +2712,6 @@ class MainActivity : Activity() {
             sinceFan += POLL_MS
             if (sinceFan >= FAN_EVERY_MS) { sinceFan = 0; readFan() }
 
-            sinceMqtt += POLL_MS
-            if (sinceMqtt >= MQTT_EVERY_MS) {
-                sinceMqtt = 0
-                mqtt.publishState(snap)
-                // Only while there is a workout to attribute. Publishing on the
-                // welcome screen would zero whoever walked last.
-                if (Session.isMoving(session) || session == Session.SUMMARY) {
-                    cfg.person(walker)?.takeIf { it.publish }
-                        ?.let { mqtt.publishPerson(it, snap) }
-                }
-            }
             Thread.sleep(POLL_MS)
         }
     }
@@ -3061,11 +2853,8 @@ class MainActivity : Activity() {
         if (beltStillKph() < STOPPED_KPH && stopNags > 0) {
             Log.i(TAG, "belt confirmed stopped after $stopNags nag(s)")
             val ran = (SystemClock.elapsedRealtime() - runawayAtUptime) / 1000
-            val stamp = java.text.SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss", java.util.Locale.US)
-                .format(java.util.Date(runawayAtWall))
             recordIncident("belt stopped after ${ran}s unattended, " +
                     "peak ${"%.1f".format(runawayPeakKph)} km/h, $stopNags nag(s)")
-            mqtt.publishRunaway(false, runawayPeakKph, stamp, ran)
             runawayPeakKph = 0.0
             stopNags = 0
         }
@@ -3195,7 +2984,6 @@ class MainActivity : Activity() {
             lapPower = lapLive?.avgPower ?: 0,
             achievements = earned,
             who = walker,
-            whoId = cfg.person(walker)?.id ?: "",
             plan = planName,
             segment = if (step != null) stepIndex + 1 else 0,
             segments = planSteps.size,
@@ -3835,7 +3623,6 @@ class MainActivity : Activity() {
         headphones.stop()
         // The button would otherwise outlive the thing it switches back to.
         stopService(Intent(this, SwitchBubble::class.java))
-        mqtt.close()
         conn.close()
         try { unregisterReceiver(permissionReceiver) } catch (_: IllegalArgumentException) {}
         super.onDestroy()

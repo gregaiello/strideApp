@@ -548,7 +548,7 @@ const flow = STRIDE.flow((step, f) => {
   // tapping the thing you chose.
   $('btnBegin').classList.toggle('gone', step !== 'plan');
   // The routes card only exists when there are routes, and they can arrive
-  // over MQTT while this screen is open — so it is decided on arrival at the
+  // from the NAS while this screen is open — so it is decided on arrival at the
   // step, not once at load.
   if (step === 'control') refreshControl();
 });

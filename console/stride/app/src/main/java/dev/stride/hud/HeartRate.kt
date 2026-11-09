@@ -37,10 +37,8 @@ import java.util.UUID
  * "straps", not "Bluetooth devices near a treadmill", and a strap nobody has
  * heard of works on the day it is unboxed.
  *
- * **This connection is the console's own.** It does not go through Home
- * Assistant and does not care whether the broker is up, for the same reason the
- * coach keeps a set of canned lines: a treadmill in a shed with no network is
- * still a treadmill.
+ * **This connection is the console's own.** It needs no network and nothing
+ * else on it: a treadmill in a shed with no network is still a treadmill.
  *
  * **Reconnection is left to `autoConnect = true`; the first connection is not.**
  * A strap goes out of range every time its wearer walks off, and the platform's

@@ -3,26 +3,24 @@ package dev.stride.hud
 import android.content.Context
 import android.util.Log
 import org.json.JSONArray
-import org.json.JSONException
 import java.io.File
 
 /**
  * Routes converted from real outdoor walks, cached on the console.
  *
- * These arrive over MQTT from Home Assistant, which got them from the phone.
- * They are **cached to disk on arrival**, and that is the whole reason this
- * class exists rather than a `@Volatile` field like the one holding the person
- * registry: the console can boot with no network at all. A route fetched at
- * workout time would not be there, and the failure would arrive at the worst
- * possible moment — standing on the belt, having chosen a walk.
+ * They come from GPX files in the NAS's routes/ folder (NasCopy.fetchRoutes)
+ * and are **cached to disk on arrival**: the console can boot with no network
+ * at all, and a route fetched at workout time would fail at the worst possible
+ * moment — standing on the belt, having chosen a walk.
  *
- * MQTT retains the topic, so a console that boots *with* a network gets the
- * routes from the broker without Home Assistant needing to be up. The disk copy
- * covers the case where the broker is unreachable too.
+ * They used to arrive over MQTT from Home Assistant too, from a phone. This
+ * fork has no Home Assistant or MQTT (2026-11-09), so nothing new comes that
+ * way, but whatever the phone had already sent is still in `routes.json` and
+ * is still offered: a route somebody walks should not vanish because the
+ * road it came by was closed.
  *
  * There is no GPS here and never will be. What arrives is a gradient profile:
- * `[startM, endM, incline]` triples against distance travelled. The phone
- * discards the track before sending — see `iOS.md`.
+ * `[startM, endM, incline]` triples against distance travelled.
  */
 class Routes(context: Context) {
 
@@ -43,38 +41,10 @@ class Routes(context: Context) {
         Log.i(TAG, "loaded ${try { JSONArray(raw).length() } catch (e: Exception) { 0 }} route(s) from disk")
     }
 
-    /**
-     * A payload from Home Assistant.
-     *
-     * Validated before it replaces anything. A malformed payload that
-     * overwrote the cache would take the routes away until the phone next
-     * synced, and the console would have thrown away a good copy to store a bad
-     * one — so a parse failure keeps what is already here and says so.
-     */
-    fun accept(payload: String) {
-        val text = payload.trim().ifBlank { "[]" }
-        try {
-            JSONArray(text)
-        } catch (e: JSONException) {
-            Log.w(TAG, "ignoring unparseable payload (${e.message})")
-            return
-        }
-        raw = text
-        try {
-            file.writeText(text)
-            Log.i(TAG, "cached ${count()} route(s)")
-        } catch (e: Exception) {
-            // Held in memory regardless. Losing the cache costs the routes on
-            // the next cold boot; refusing the update would cost them now.
-            Log.w(TAG, "cannot write cache (${e.message})")
-        }
-    }
-
     /*
      * Fork-only: routes converted from GPX files in the NAS's routes/ folder
-     * (NasCopy.fetchRoutes). Kept in their own file and list rather than
-     * merged into [raw], because a phone sync replaces [raw] wholesale and
-     * would otherwise wipe them, and a NAS fetch must not wipe the phone's.
+     * (NasCopy.fetchRoutes). Kept in their own file, apart from the phone's
+     * old ones in [raw], so a NAS fetch never wipes those.
      */
     private val nasFile = File(context.filesDir, "routes_nas.json")
 
@@ -83,7 +53,7 @@ class Routes(context: Context) {
         if (nasFile.exists()) nasFile.readText() else "[]"
     } catch (e: Exception) { "[]" }
 
-    /** The NAS's set, replacing the last one. Same keep-the-good-copy rule as [accept]. */
+    /** The NAS's set, replacing the last one. */
     fun acceptNas(routes: JSONArray) {
         nasRaw = routes.toString()
         try {

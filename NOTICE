@@ -14,23 +14,15 @@ See LICENSE for the full text.
 Third-party components
 ================================================================================
 
-Eclipse Paho Java Client — org.eclipse.paho.client.mqttv3, version 1.2.5
+JSch (mwiede fork) — com.github.mwiede:jsch, version 0.2.20
 --------------------------------------------------------------------------------
 Bundled unmodified in the console application (console/stride), where it is the
-MQTT client that talks to Home Assistant.
+SFTP client that copies walks to a NAS (fork-only). Distributed under a
+BSD-style licence; see https://github.com/mwiede/jsch for the licence text and
+the source.
 
-Provided by the Eclipse Foundation under the terms of the Eclipse Public
-License Version 2.0 ("EPL") and the Eclipse Distribution License Version 1.0
-("EDL"):
-
-    https://www.eclipse.org/legal/epl-2.0
-    https://www.eclipse.org/org/documents/edl-v10.php
-
-Neither licence is the Apache License under which the rest of this project is
-released, and this notice is here because the EPL asks for it: if you
-redistribute a build of the console, the Paho terms travel with the copy of
-Paho inside it. Source for the library is available from the Eclipse
-Foundation at https://github.com/eclipse/paho.mqtt.java.
+(Until 2026-11-09 the console also bundled the Eclipse Paho MQTT client, for
+Home Assistant. This fork no longer includes it.)
 
 
 Gradle Wrapper — gradle/wrapper/gradle-wrapper.jar

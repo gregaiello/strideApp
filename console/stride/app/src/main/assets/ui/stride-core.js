@@ -865,10 +865,9 @@ function profiles() {
 
   /* Guest sits alongside the household rather than instead of it: somebody
      else's turn on the belt is common, and it should not mean picking a name
-     that is not yours. It is never published, because a guest has not agreed
-     to anything — Settings.publishFor returns
-     false for any name that is not in the people list, so "Guest" needs no
-     special case in Kotlin.
+     that is not yours. It is never recorded against anyone: Kotlin treats
+     any name that is not in the people list as nobody's, so "Guest" needs no
+     special case there.
 
      With nobody set up at all, Guest is the only option and the treadmill
      still works, which beats refusing to start until a form is filled in. */

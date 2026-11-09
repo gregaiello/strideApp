@@ -12,7 +12,7 @@ import java.util.Locale
  * elapsed counter never returns to zero.
  *
  * The user pressing START and END is the fact we can actually trust, so that is
- * what drives the HUD, the timer, and everything published to HA. The board's
+ * what drives the HUD, the timer and the recording. The board's
  * mode is kept only for the two things it alone knows: the belt interlock and
  * the safety key.
  */
@@ -34,7 +34,7 @@ object Session {
     fun isMoving(v: Int) = v == WARMUP || v == ACTIVE || v == COOLDOWN
 }
 
-/** One frame of everything both the HUD and Home Assistant need. */
+/** One frame of everything the HUD and the recording need. */
 data class Snapshot(
     /**
      * The pace the console is holding, km/h — the setpoint, not a measurement.
@@ -61,10 +61,11 @@ data class Snapshot(
      * the commanded pace is still detectable — see [slipping] — now that the
      * dial no longer shows it.
      *
-     * Published to Home Assistant since 8 September 2026, so the recorder keeps
-     * a trace of it. Reconstructing that walk's belt speed afterwards meant
+     * Reconstructing one walk's belt speed afterwards (8 September 2026) meant
      * differencing the whole-metre distance sensor, because this — the number
-     * the console had already worked out — was going nowhere.
+     * the console had already worked out — was going nowhere. It was published
+     * to Home Assistant from then on; this fork has no Home Assistant, so it is
+     * logged and carried here only.
      */
     val beltKph: Double = 0.0,
     /**
@@ -150,14 +151,6 @@ data class Snapshot(
     val achievements: List<String> = emptyList(),
     /** Who tapped their name on the welcome screen. */
     val who: String = "",
-    /**
-     * The walker's stable profile id, or empty for a guest.
-     *
-     * Sent to Home Assistant alongside [who] so a walk can be told apart from
-     * another person's without matching on a display name. See
-     * Settings.Person.id.
-     */
-    val whoId: String = "",
     /** Guided walk, or empty on a casual one. */
     val plan: String = "",
     val segment: Int = 0,
@@ -314,7 +307,6 @@ data class Snapshot(
             achievements.joinToString(",", "[", "]") { "\"${esc(it)}\"" }
         },")
         append("\"who\":\"${esc(who)}\",")
-        append("\"whoId\":\"${esc(whoId)}\",")
         append("\"plan\":\"${esc(plan)}\",")
         append("\"segment\":$segment,")
         append("\"segments\":$segments,")

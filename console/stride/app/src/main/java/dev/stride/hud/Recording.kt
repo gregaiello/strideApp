@@ -59,7 +59,7 @@ data class Recorded(
  * Every second of a workout, written to the console as it happens.
  *
  * **Why on the console.** The file this becomes is for Strava and Coros, and it
- * has to exist with no broker, no network and no Home Assistant, the same rule
+ * has to exist with no NAS and no network, the same rule
  * the rest of the console follows. History.kt keeps a walk's totals; this keeps
  * the walk.
  *

@@ -53,11 +53,6 @@ numbers.
 
 STRIDE is not a medical device and is not certified as anything.
 
-The coach is a language model given some numbers and told to be brief. It is
-instructed never to give medical advice or express concern about a reading, and
-there is a setting to take a subject off the table entirely. It can still be
-wrong.
-
 Bluetooth straps, and handlebar grips on machines that have them, are consumer
 heart rate sensors. If a number looks alarming, believe your body and a doctor.
 
