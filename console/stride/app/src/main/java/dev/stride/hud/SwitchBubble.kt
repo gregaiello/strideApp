@@ -276,6 +276,6 @@ class SwitchBubble : Service() {
     private fun toStride() {
         if (MainActivity.bringToFront(this)) return
         startActivity(Intent(this, MainActivity::class.java)
-            .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+            .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_NO_USER_ACTION))
     }
 }

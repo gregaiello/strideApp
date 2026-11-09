@@ -69,8 +69,17 @@ class MainActivity : Activity() {
         fun bringToFront(ctx: Context): Boolean {
             val a = live ?: return false
             if (a.isFinishing || a.isDestroyed) return false
+            // NO_USER_ACTION, because without it the app being covered is told
+            // the user is leaving it (onUserLeaveHint), and that is exactly
+            // when Prime Video drops into picture-in-picture. On this console
+            // the picture-in-picture window came back as a full-screen video
+            // over STRIDE: STRIDE resumed underneath, the switch button flipped
+            // its icon, and nothing on screen could get rid of the film (first
+            // walk of 2026-11-09, ended by power-cycling the treadmill). Going
+            // back to STRIDE is not the user leaving the film in that sense —
+            // they will be back — so the hint is the wrong signal anyway.
             (ctx.getSystemService(Context.ACTIVITY_SERVICE) as ActivityManager)
-                .moveTaskToFront(a.taskId, 0)
+                .moveTaskToFront(a.taskId, ActivityManager.MOVE_TASK_NO_USER_ACTION)
             return true
         }
         const val ACTION_USB_PERMISSION = "dev.stride.hud.USB_PERMISSION"
