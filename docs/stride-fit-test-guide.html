@@ -97,7 +97,7 @@ $env:JAVA_HOME = 'C:\path\to\your\jdk'   # JDK 17 or newer
     <div class="ok">✅ <code>BUILD SUCCESSFUL</code>. The APK is
       <code>console\stride\app\build\outputs\apk\debug\app-debug.apk</code>.</div>
     <div class="warn">This laptop has no signing key, so this is a <b>debug</b> build. That's fine for a test.
-      A debug build lets other apps on the console read STRIDE's stored settings (MQTT password included),
+      A debug build lets other apps on the console read STRIDE's stored settings (the NAS key included),
       so don't leave it there for years. See <code>docs/INSTALL.md</code> 1.7.</div>
   </section>
 
@@ -271,16 +271,15 @@ mv tools/device-state.txt ../device-state.txt</code></pre>
       <li><b>Treadmill → Saved walks → Strava elevation</b>: <b>on</b> (the default). This is what makes Strava
         keep the climb.</li>
       <li><b>Interface</b>: any of the five. <i>Original</i> is the most tested.</li>
-      <li>Home Assistant: optional; skip it for this test.</li>
       <li><b>Display → Switch button</b> (optional): tap <b>USE</b> next to your streaming app. Only video apps
-        are listed (Netflix, Prime Video, NewPipe and a few others, if installed). A round button showing the
+        are listed (Netflix, Prime Video, SmartTube and a few others, if installed). A round button showing the
         app's icon appears at the right edge, over every app, and flips between STRIDE and that app. Drag it up or down to
         move it. If the section says STRIDE is not allowed to draw over other apps, tap <b>ALLOW</b>, or from
         the laptop:
 <pre><code>&amp; $adb -s <span class="ipv">CONSOLE-IP</span>:5555 shell appops set dev.stride.hud SYSTEM_ALERT_WINDOW allow</code></pre></li>
       <li><b>Headphones</b> (optional): put your Bluetooth headphones in pairing mode (not connected to your
         phone), tap <b>SEARCH</b>, then <b>PAIR</b>. When the line says <i>Connected · sound plays here</i>,
-        every app's sound, the coach included, goes to them. They reconnect on their own next time.
+        every app's sound goes to them. They reconnect on their own next time.
         <b>FORGET</b> removes them for good.</li>
       <li><b>Treadmill → Copy to NAS</b> (optional): every .fit is also copied over SFTP to
         <code>&lt;home&gt;/&lt;your name&gt;/</code> on the NAS. Fill in the NAS address (its IP or its network
@@ -300,24 +299,18 @@ mv tools/device-state.txt ../device-state.txt</code></pre>
         heights; export the recorded activity instead.</li>
       <li><b>About → Reset every setting</b> needs the PIN <b>1235</b>. Leave it alone for this test.</li>
     </ul>
-    <details><summary>Install YouTube, Netflix and Prime Video (for the switch button)</summary>
-      <p>The console has no Play Store, so everything is installed from the laptop. YouTube also needs Google Play
-        services, which the console doesn't have either (without it YouTube says <i>"your device does not
-        support Google Play"</i>), so Google's three parts go on first. These are the newest versions that run
-        on the console's Android 9 (checked November 2026):</p>
+    <details><summary>Install SmartTube (YouTube), Netflix and Prime Video (for the switch button)</summary>
+      <p>The console has no Play Store, so everything is installed from the laptop. None of these three needs
+        Google Play services. Don't install Google's own YouTube app: it needs Play services, and Google treats
+        this console as an uncertified device. YouTube works for a few days, then opens on <i>"This device isn't
+        Play Protect certified"</i> instead, and Play services' crash dialogs start covering STRIDE. These are
+        the versions checked on the console's Android 9 (November 2026):</p>
       <ul>
-        <li><b>Google Services Framework 9-6957767</b>:
-          <a href="https://www.apkmirror.com/apk/google-inc/google-services-framework/google-services-framework-9-6957767-release/google-services-framework-9-6957767-android-apk-download/">APKMirror</a>.
-          It must be a <code>9-…</code> version, the one built for Android 9.</li>
-        <li><b>Google Play services 26.36.33</b>, the <i>arm64-v8a + armeabi-v7a</i>, <i>Android 9.0+</i>,
-          <i>nodpi</i> APK:
-          <a href="https://www.apkmirror.com/apk/google-inc/google-play-services/google-play-services-26-36-33-release/google-play-services-26-36-33-100400-986028547-android-apk-download/">APKMirror</a>.
-          A newer stable release (not one marked <i>beta</i>) with that same variant is fine.</li>
-        <li><b>Google Play Store 53.9.23</b>, the <i>universal</i>, <i>Android 7.0+</i> APK:
-          <a href="https://www.apkmirror.com/apk/google-inc/google-play-store/google-play-store-53-9-23-release/google-play-store-53-9-23-24-0-pr-1012244613-5-android-apk-download/">APKMirror</a>.</li>
-        <li><b>YouTube 21.23.485</b>, the universal <i>APK</i> (not a <i>BUNDLE</i>):
-          <a href="https://www.apkmirror.com/apk/google-inc/youtube/youtube-21-23-485-release/youtube-21-23-485-android-apk-download/">APKMirror</a>.
-          21.23 is the last YouTube for Android 9; from 21.24 on it needs Android 10, so don't update past it.</li>
+        <li><b>SmartTube 32.71</b>, the <i>arm64-v8a</i> APK, from its own GitHub:
+          <a href="https://github.com/yuliskov/SmartTube/releases/latest">github.com/yuliskov/SmartTube</a>.
+          It plays YouTube with no Google apps and no ads. To use your account (Premium included), tap the person
+          icon and enter the code it shows at <code>youtube.com/activate</code> on your phone; no password is
+          typed on the console.</li>
         <li><b>Netflix 9.90.1 build 12 74817</b>:
           <a href="https://www.apkmirror.com/apk/netflix-inc/netflix/netflix-9-90-1-build-12-74817-release/netflix-9-90-1-build-12-74817-android-apk-download/">APKMirror</a>.
           Netflix still supports Android 9, so a newer stable release with <i>Android 9.0+</i> in its variant list
@@ -327,45 +320,36 @@ mv tools/device-state.txt ../device-state.txt</code></pre>
           Pick <i>Amazon Prime Video</i> (the phone app), not the <i>Android TV</i> or <i>Fire TV</i> ones.</li>
       </ul>
       <ol>
-        <li>Download them into your <b>Downloads</b> folder and rename them <code>gsf.apk</code>,
-          <code>gms.apk</code>, <code>vending.apk</code>, <code>youtube.apk</code>, <code>netflix.apk</code> and
-          <code>primevideo.apk</code>.</li>
-        <li>Optional, but it proves the files really come from Google, Netflix and Amazon. Check who signed them:
+        <li>Download them into your <b>Downloads</b> folder and rename them <code>smarttube.apk</code>,
+          <code>netflix.apk</code> and <code>primevideo.apk</code>.</li>
+        <li>Optional, but it proves the files really come from SmartTube, Netflix and Amazon. Check who signed them:
 <pre><code>$apksigner = (Get-ChildItem "$env:LOCALAPPDATA\Android\Sdk\build-tools\*\apksigner.bat" | Select-Object -Last 1).FullName
-foreach ($f in "gsf","gms","vending","youtube","netflix","primevideo") {
+foreach ($f in "smarttube","netflix","primevideo") {
   "== $f"; &amp; $apksigner verify --print-certs "$env:USERPROFILE\Downloads\$f.apk" | Select-String "SHA-256"
 }</code></pre>
-          <div class="ok">✅ <b>gsf, gms, vending</b>: <code>f0fd6c5b410f25cb…2d60db83</code> (Google).
-            <b>youtube</b>: one line ends <code>…7c23f326c8f994a</code> (starting <code>3d7a1223</code>).
+          <div class="ok">✅ <b>smarttube</b>: <code>109735aa24fe85e2…2eda482a</code> (Yurii L, SmartTube).
             <b>netflix</b>: one line ends <code>…742390e682164e6b</code> (starting <code>363863596ea9</code>).
             <b>primevideo</b>: <code>2f19adeb284eb36f…ab6d7625</code> (Amazon Services LLC).
             Anything else: don't install it.</div></li>
-        <li>Install, in this order: Google's three parts depend on each other. Plain <code>adb install</code> has
-          failed silently on this console, so each file is copied over and installed on the console itself:
-<pre><code>foreach ($f in "gsf","gms","vending","youtube","netflix","primevideo") {
+        <li>Install. Plain <code>adb install</code> has failed silently on this console, so each file is copied
+          over and installed on the console itself:
+<pre><code>foreach ($f in "smarttube","netflix","primevideo") {
   &amp; $adb -s <span class="ipv">CONSOLE-IP</span>:5555 push "$env:USERPROFILE\Downloads\$f.apk" /data/local/tmp/$f.apk
   &amp; $adb -s <span class="ipv">CONSOLE-IP</span>:5555 shell pm install -r /data/local/tmp/$f.apk
   &amp; $adb -s <span class="ipv">CONSOLE-IP</span>:5555 shell rm -f /data/local/tmp/$f.apk
 }</code></pre>
-          <div class="ok">✅ <code>Success</code> six times.</div></li>
-        <li>Google's parts are installed as ordinary apps here, so they don't get the permissions they would have
-          on a phone. Grant them:
-<pre><code>foreach ($p in "com.google.android.gsf","com.google.android.gms","com.android.vending") {
-  $perms = &amp; $adb -s <span class="ipv">CONSOLE-IP</span>:5555 shell dumpsys package $p |
-    Select-String 'android\.permission\.[A-Z_]+' -AllMatches | ForEach-Object { $_.Matches.Value } | Sort-Object -Unique
-  foreach ($x in $perms) { &amp; $adb -s <span class="ipv">CONSOLE-IP</span>:5555 shell pm grant $p $x 2&gt;$null }
-}</code></pre>
-          Errors for permissions that can't be granted this way are normal and hidden.</li>
-        <li>On the console, open <b>YouTube</b>: it should start, at its cookie choice. Signing in is optional, in
-          YouTube or the Play Store. If Google refuses because the device <i>isn't certified</i>, the console has
-          to be registered at <code>google.com/android/uncertified</code>.</li>
+          <div class="ok">✅ <code>Success</code> three times.</div></li>
+        <li>On the console, open <b>SmartTube</b>: it should open on a row of videos.</li>
         <li>Pick an app under <b>Display → Switch button</b>.</li>
       </ol>
-      <div class="warn">What to expect: Netflix plays in SD, because this console is not Google-certified. Play
-        services is big and the console has 2 GB of memory; uninstalling the three Google apps undoes all of it.
-        The pushes take a few minutes over Wi-Fi (Play services about 280 MB, Netflix 280 MB, YouTube and Prime
-        Video about 190 MB each). Rather not have Google on it? <a href="https://github.com/TeamNewPipe/NewPipe/releases/latest">NewPipe</a>
-        plays YouTube without any of it, in its own plainer look.</div>
+      <div class="warn">What to expect: Netflix plays in SD, because this console is not Google-certified. The
+        pushes take a few minutes over Wi-Fi (Netflix about 280 MB, Prime Video 190 MB, SmartTube 27 MB).</div>
+      <p>Installed Google's apps from an earlier version of this guide? Take them off: Play services makes itself a
+        device admin, so in Android's <b>Settings → Security → Device admin apps</b> turn off <i>Find Hub</i> and
+        <i>Screen lock service</i> first, then:</p>
+<pre><code>foreach ($p in "com.google.android.youtube","com.android.vending","com.google.android.verifier","com.google.android.gms","com.google.android.gsf") {
+  &amp; $adb -s <span class="ipv">CONSOLE-IP</span>:5555 shell pm uninstall $p
+}</code></pre>
     </details>
   </section>
 

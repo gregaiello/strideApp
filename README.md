@@ -145,9 +145,10 @@ to move it. It is off until you pick an app, and Android has to allow STRIDE
 to draw over other apps: tap ALLOW there, or over adb
 `adb shell appops set dev.stride.hud SYSTEM_ALERT_WINDOW allow`.
 The console has no Play Store; the [fork guide](docs/stride-fit-test-guide.html)
-(step 11) covers installing Google Play services (the official YouTube app
-refuses to run without it), YouTube, Netflix and Prime Video over adb. Only
-video apps are offered for the button.
+(step 11) covers installing SmartTube (YouTube), Netflix and Prime Video over
+adb. None of them needs Google Play services. The official YouTube app does,
+and on this uncertified console Google blocks it within days, so it isn't
+offered. Only video apps are offered for the button.
 
 **Headphones.** Settings → Headphones pairs Bluetooth headphones from the
 console itself, whose own Bluetooth screen is out of reach. Put them in

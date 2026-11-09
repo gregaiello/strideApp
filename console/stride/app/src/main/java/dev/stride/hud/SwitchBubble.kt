@@ -69,14 +69,22 @@ class SwitchBubble : Service() {
          * never what was meant. Video apps known to install on a Play-less
          * Android 9 console, plus the usual alternatives. Add a package here to
          * offer another one.
+         *
+         * Google's own YouTube app is left out on purpose. It needs Play
+         * services, and on this console Play services checks in, finds a build
+         * Google never certified, and a few days later starts replacing YouTube
+         * with a "This device isn't Play Protect certified" page (seen
+         * 2026-11-09, four days after a clean install). Netflix and Prime
+         * Video don't ask; SmartTube plays YouTube without Google at all.
          */
         val VIDEO_APPS = setOf(
             "com.netflix.mediaclient",          // Netflix
             "com.amazon.avod.thirdpartyclient", // Prime Video
-            "org.schabi.newpipe",               // NewPipe (YouTube without Google Play)
+            "org.smarttube.stable",             // SmartTube (YouTube without Google Play)
+            "org.smarttube.beta",               // SmartTube beta
+            "com.teamsmart.videomanager.tv",    // SmartTube, older installs
+            "org.schabi.newpipe",               // NewPipe
             "org.polymorphicshade.tubular",     // Tubular, a NewPipe fork
-            "com.teamsmart.videomanager.tv",    // SmartTube
-            "com.google.android.youtube",       // YouTube, where Google Play exists
             "app.revanced.android.youtube",     // ReVanced YouTube
             "com.disney.disneyplus",            // Disney+
             "com.plexapp.android",              // Plex

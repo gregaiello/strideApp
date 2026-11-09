@@ -1275,7 +1275,7 @@
       appsBox.innerHTML = '';
       if (!list.length) {
         appsBox.appendChild(el('div', 'sx-empty',
-          'No video apps installed.<br>Netflix, Prime Video or NewPipe, for example. See the fork guide.'));
+          'No video apps installed.<br>Netflix, Prime Video or SmartTube, for example. See the fork guide.'));
         return;
       }
       var cur = S.switch_app || '';
