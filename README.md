@@ -9,11 +9,9 @@ Step-by-step guide for this fork, from a factory reset to a .fit on Strava: [doc
 The software infrastructure/architecture is presented below for information:
 <img width="1763" height="930" alt="image" src="https://github.com/user-attachments/assets/6e44d891-9944-4b02-8342-51481d98fe7f" />
 
-### What this fork adds
+### Added features
 
-Commits marked `[fork-only]` are specific to this fork and are not meant to go back upstream. The rest are written so they could.
-
-**Structured sessions (fork-only).** Guided mode (the four hill templates) is gone. In its place, **Session** sits between Manual and Routes:
+**Structured sessions.** **Session** sits between Manual and Routes:
 - **Intervals:** warm-up, N × on/off, cool-down.
 - **Progression:** from a start grade and pace to an end one, going only up, up and down, or only down.
 
@@ -32,13 +30,13 @@ Every part has its own duration, grade and pace (min/km), and sessions are saved
   <img src="docs/screenshots/fork-summary-qr.png" width="49%" alt="Summary with the phone QR code">
 </p>
 
-**Walks to a phone by QR code (fork-only).** The summary shows a QR code straight away. Scan it with a phone on the same Wi-Fi to get the walk's .fit, then upload it to Strava from the phone. Settings shows a second code for the last ten walks. The console keeps the last ten walks and never deletes one that hasn't been copied yet.
+**Walks to a phone by QR code.** The summary shows a QR code straight away. Scan it with a phone on the same Wi-Fi to get the walk's .fit, then upload it to Strava from the phone. Settings shows a second code for the last ten walks. The console keeps the last ten walks and never deletes one that hasn't been copied yet.
 
 **Strava-ready .fit files.**
 - Every walk by a named person is recorded a second at a time, in a file a crash can't ruin.
 - It's exported as a .fit with laps, heart rate, power and elevation.
 - The file carries a made-up GPS circle, so Strava and Coros show a map.
-- The fork-only part: the file identifies as a barometric watch, so Strava keeps the climb.
+- The file identifies as a barometric watch, so Strava keeps the climb.
 
 **Laps.** A LAP button and a lap readout in all five interfaces, counted the way a sport watch does.
 
@@ -51,9 +49,7 @@ Every part has its own duration, grade and pace (min/km), and sessions are saved
 - Bluetooth headphones can be paired from Settings.
 - STRIDE comes back to the front without the video app noticing.
 
-**Per-person weight, power and heart-rate zones (fork-only).** The live coach is gone. Power is estimated from weight, speed and grade, and time in each zone shows on the live screen.
-
-**Home Assistant and MQTT removed (fork-only).** Walks leave the console only through the NAS copy, the .fit export and the phone QR code.
+**Per-person weight, power and heart-rate zones.** Power is estimated from weight, speed and grade, and time in each zone shows on the live screen.
 
 **X22i fixes.**
 - The gauges are sized to the board's own range (up to 22 km/h and 40 %).
@@ -62,8 +58,6 @@ Every part has its own duration, grade and pace (min/km), and sessions are saved
 - The belt stops when STRIDE closes, in a way the X22i accepts.
 - Two STRIDE windows can never run on one board.
 - The 1280×800 interfaces stretch to fill the panel.
-
-The full reasoning for each change is in `git log`.
 
 **Replace the iFit software on a NordicTrack treadmill. Keep the belt, lose the subscription.**
 
