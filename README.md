@@ -9,6 +9,62 @@ Step-by-step guide for this fork, from a factory reset to a .fit on Strava: [doc
 The software infrastructure/architecture is presented below for information:
 <img width="1763" height="930" alt="image" src="https://github.com/user-attachments/assets/6e44d891-9944-4b02-8342-51481d98fe7f" />
 
+### What this fork adds
+
+Commits marked `[fork-only]` are specific to this fork and are not meant to go back upstream. The rest are written so they could.
+
+**Structured sessions (fork-only).** Guided mode (the four hill templates) is gone. In its place, **Session** sits between Manual and Routes:
+- **Intervals:** warm-up, N × on/off, cool-down.
+- **Progression:** from a start grade and pace to an end one, going only up, up and down, or only down.
+
+Every part has its own duration, grade and pace (min/km), and sessions are saved by name to reuse.
+- **The session drives the belt speed as well as the incline.** Speed always ramps at 1 km/h per second and stays inside the board's limits. A press on speed or incline shifts the target until the next step. Pause, STOP, the safety key and END work as everywhere else.
+- **NEXT** skips a step, and **END** jumps to the session's cool-down.
+- Every step boundary is a lap in the .fit file.
+- Ten seconds before each step a card counts down to the next interval, **also over Prime, Netflix or SmartTube**.
+
+<p>
+  <img src="docs/screenshots/fork-session-control-mode.png" width="49%" alt="Choose Mode: Manual, Session, Routes">
+  <img src="docs/screenshots/fork-session-editor.png" width="49%" alt="Interval session editor: warm-up, on, off, reps, cool-down, with time, grade and pace">
+</p>
+<p>
+  <img src="docs/screenshots/fork-session-next-interval.png" width="49%" alt="Live session with the next-interval countdown card">
+  <img src="docs/screenshots/fork-summary-qr.png" width="49%" alt="Summary with the phone QR code">
+</p>
+
+**Walks to a phone by QR code (fork-only).** The summary shows a QR code straight away. Scan it with a phone on the same Wi-Fi to get the walk's .fit, then upload it to Strava from the phone. Settings shows a second code for the last ten walks. The console keeps the last ten walks and never deletes one that hasn't been copied yet.
+
+**Strava-ready .fit files.**
+- Every walk by a named person is recorded a second at a time, in a file a crash can't ruin.
+- It's exported as a .fit with laps, heart rate, power and elevation.
+- The file carries a made-up GPS circle, so Strava and Coros show a map.
+- The fork-only part: the file identifies as a barometric watch, so Strava keeps the climb.
+
+**Laps.** A LAP button and a lap readout in all five interfaces, counted the way a sport watch does.
+
+**NAS.**
+- Finished walks are copied over SFTP to a folder per person on a home NAS, with a pinned host key.
+- Routes are built from GPX files in a folder on the same NAS and replayed by distance.
+
+**Video while you walk.**
+- A floating button switches between STRIDE and one video app: Netflix, Prime Video or SmartTube. SmartTube replaces Google's YouTube, which stops working on an uncertified console.
+- Bluetooth headphones can be paired from Settings.
+- STRIDE comes back to the front without the video app noticing.
+
+**Per-person weight, power and heart-rate zones (fork-only).** The live coach is gone. Power is estimated from weight, speed and grade, and time in each zone shows on the live screen.
+
+**Home Assistant and MQTT removed (fork-only).** Walks leave the console only through the NAS copy, the .fit export and the phone QR code.
+
+**X22i fixes.**
+- The gauges are sized to the board's own range (up to 22 km/h and 40 %).
+- Cluster shows pace.
+- The console's own STOP and START keys are followed.
+- The belt stops when STRIDE closes, in a way the X22i accepts.
+- Two STRIDE windows can never run on one board.
+- The 1280×800 interfaces stretch to fill the panel.
+
+The full reasoning for each change is in `git log`.
+
 **Replace the iFit software on a NordicTrack treadmill. Keep the belt, lose the subscription.**
 
 **Please note**: This is a hobby project by one person and Claude Code, please don't get upset at that. Claude Code is enabling me to be able to do something I've dreamed of doing for a few years but didn't have the ability. Now I'm able to walk/run on my own physical hardware that I bought without it having someone else's subscription software on it. If you don't like that 90% of this was coded with AI tools like Claude Code - then this isn't the project for you. If you want to fork this, put your fingerprints all over it ... please do, I'd welcome that!
@@ -28,7 +84,9 @@ The software infrastructure/architecture is presented below for information:
 > ⚠️ **This drives a motorised treadmill.** Read [SAFETY.md](SAFETY.md) before
 > you install anything. Your physical safety key is still the stop that matters
 > and it cuts the motor directly. STRIDE drives the incline, but speed is only
-> ever suggested. You decide when to go faster.
+> ever suggested. You decide when to go faster. *In this fork, a structured
+> session you start also drives the speed, always as a gentle ramp; see
+> SAFETY.md.*
 > The console's own STOP and START keys pause and resume the walk in STRIDE
 > as well, so one press is enough. Closing STRIDE stops the belt.
 
