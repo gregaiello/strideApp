@@ -1309,7 +1309,7 @@ function stepWarning(raw) {
   }
   var secs = Math.max(1, Math.ceil(left));
   var spec = [];
-  if (raw.nextSpeed > 0) spec.push(Number(raw.nextSpeed).toFixed(1) + ' km/h');
+  if (raw.nextSpeed > 0) spec.push(paceAt(raw.nextSpeed) + ' /km');
   spec.push(Number(raw.nextIncline || 0).toFixed(1) + ' %');
   var key = secs + '|' + raw.nextLabel + '|' + spec.join();
   if (key !== warnKey) {

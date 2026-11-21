@@ -465,6 +465,13 @@
   /* Clamp only in the direction of travel. A stored value already past the
      board's range (saved on a day it reported a wider one) stays as it is
      until somebody moves it, and then only moves back inside. */
+  /** km/h as a pace, m:ss per kilometre. */
+  function paceOf(kph) {
+    if (!(kph > 0)) return '–:––';
+    var sec = Math.round(3600 / kph);
+    return Math.floor(sec / 60) + ':' + ('0' + (sec % 60)).slice(-2);
+  }
+
   function bounded(v, nv, d, min, max) {
     if (d > 0) return Math.min(nv, Math.max(v, max));
     return Math.max(nv, Math.min(v, min));
@@ -487,10 +494,21 @@
         return Math.round(bounded(v, v + d * 0.5, d, L.minGrade, L.maxGrade) * 100) / 100;
       }
     },
+    /* Speed is set as pace, min/km, because that is how the owner thinks
+       about a rep (2026-11-21). Stored as km/h all the same: Kotlin, the
+       board and saved sessions all speak km/h, and a pace is only a way of
+       writing one. + and - move the number on screen, so + is a slower pace.
+       Five seconds a tap, fifteen on a hold. The belt resolves 0.1 km/h,
+       which at walking paces is coarser than five seconds a kilometre, so a
+       slow pace may land a few seconds either side of the one shown. */
     kph: {
-      fmt: function (v) { return v.toFixed(1) + '<small>km/h</small>'; },
+      fmt: function (v) { return paceOf(v) + '<small>/km</small>'; },
       bump: function (v, d, coarse) {
-        return Math.round(bounded(v, v + d * (coarse ? 0.5 : 0.1), d, L.minKph, L.maxKph) * 100) / 100;
+        var fast = Math.ceil(3600 / L.maxKph / 5) * 5;
+        var slow = Math.floor(3600 / L.minKph / 5) * 5;
+        var pace = Math.round(3600 / (v > 0 ? v : L.minKph) / 5) * 5;
+        var next = bounded(pace, pace + d * (coarse ? 15 : 5), d, fast, slow);
+        return Math.round(3600 / next * 1000) / 1000;
       }
     },
     reps: {
@@ -809,8 +827,8 @@
       total.innerHTML = '<small>Total</small><b>' + clock(totalSec(draft)) + '</b>';
       var sp = range(draft, 1), gr = range(draft, 2);
       leg.innerHTML =
-        '<span><i style="background:rgb(var(--ss-acc))"></i>Speed ' +
-          sp[0].toFixed(1) + '–' + sp[1].toFixed(1) + ' km/h</span>' +
+        '<span><i style="background:rgb(var(--ss-acc))"></i>Pace ' +
+          paceOf(sp[1]) + '–' + paceOf(sp[0]) + ' /km</span>' +
         '<span><i style="background:rgb(var(--ss-warm))"></i>Grade ' +
           gr[0].toFixed(1) + '–' + gr[1].toFixed(1) + ' %</span>';
       plot.innerHTML = sparkSvg(draft, 1166, 66, true);
@@ -819,7 +837,7 @@
     var rows = el('div', 'ss-rows');
     var ch = el('div', 'ss-ch');
     ch.innerHTML = '<div class="ss-lab"></div><div class="ss-cell">Time</div>' +
-                   '<div class="ss-cell">Grade</div><div class="ss-cell">Speed</div>';
+                   '<div class="ss-cell">Grade</div><div class="ss-cell">Pace</div>';
     rows.appendChild(ch);
 
     var row = function (label, sub, cells) {

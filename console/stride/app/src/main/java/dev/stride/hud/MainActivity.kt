@@ -2243,8 +2243,10 @@ class MainActivity : Activity() {
             stepWarn.hide()
             return
         }
+        // Pace, as the session editor and Cluster's dial show it.
+        val pace = if (next.kph > 0.0) Math.round(3600 / next.kph).toInt() else 0
         stepWarn.update(next.label,
-            "${"%.1f".format(next.kph)} km/h · ${"%.1f".format(next.incline)} %",
+            "${pace / 60}:${"%02d".format(pace % 60)} /km · ${"%.1f".format(next.incline)} %",
             Math.ceil(left).toInt().coerceAtLeast(1))
     }
 
