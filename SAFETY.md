@@ -10,9 +10,10 @@ standing on it.
 
 ## What can hurt you
 
-**The belt and deck can move without you touching anything.** A guided walk
-changes the incline on its own, and a warm-up ramps the belt up when a workout
-starts.
+**The belt and deck can move without you touching anything.** A route
+changes the incline on its own, a warm-up ramps the belt up when a workout
+starts, and a structured session (this fork) changes **both speed and
+incline** at every step until it ends.
 
 **The incline deck moves under load** — flat to nine percent shifts real weight
 while you're on it.
@@ -28,9 +29,18 @@ motor, belt and deck are unchanged.
 hardware cuts the belt, independently of anything STRIDE is doing. STRIDE
 notices and shows a screen, but it isn't what stopped the belt.
 
-**STRIDE drives the incline. It only ever suggests a speed.** A guided walk
-moves the deck, because the deck can't run away underneath you. It will say
-"lift to 6.4 km/h" and leave the belt where it is.
+**STRIDE drives the incline. Outside a session it only ever suggests a
+speed.** A route moves the deck, because the deck can't run away underneath
+you. It will say "lift to 6.4 km/h" and leave the belt where it is.
+
+**A session drives the belt speed too (fork-only, 2026-11-21).** You start it
+with a tap on its START, knowing that is what it does. Speed changes are
+always a ramp at 1 km/h per second, never a jump, so a 7 to 13 km/h rep takes
+about six seconds to arrive. A press on speed or incline, on the screen or on
+the console's own keys, wins: it shifts the session's target by that much
+until the next step. Stepping speed down to a stop holds the belt stopped
+until the next step. STOP, the safety key and END behave exactly as they do
+anywhere else, and a session never spins a stopped belt back up on its own.
 
 **Automatic stops ramp down** at 2 km/h per second. The first guided walk cut
 the belt from 4.2 km/h to zero the moment the plan ended, which was enough to
@@ -42,10 +52,11 @@ deciding.
 at startup and every plan is clamped to them. Nothing in Settings can raise
 them.
 
-**Incline moves gradually** — a percent every three seconds by default, so the
-biggest jump in any built-in plan takes about half a minute rather than landing
-under you mid-stride. Settings offers Gentle, Normal and Quick rather than raw
-numbers.
+**On a route, incline moves gradually** — a percent every three seconds by
+default, so a big jump takes about half a minute rather than landing under you
+mid-stride. Settings offers Gentle, Normal and Quick rather than raw numbers.
+A session sends each step's grade at once and the deck moves at its motor's
+own pace, the same as the console's incline keys.
 
 ---
 

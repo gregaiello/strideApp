@@ -241,8 +241,7 @@ var DECK_SEC_PER_PCT = 3;
  * @param steps  plan steps as Kotlin sends them: {start, end, incline, label}
  * @param opts.width, opts.height   the drawing box, px
  * @param opts.headroom             px kept clear at the top for the marker
- * @param opts.startIncline         grade the deck is on at t=0; chooseGuided
- *                                  writes zero, so that is the default
+ * @param opts.startIncline         grade the deck is on at t=0; zero by default
  */
 function profile(steps, opts) {
   opts = opts || {};
@@ -442,6 +441,8 @@ function profile(steps, opts) {
      Δdistance × grade on this side is accurate enough for a number displayed
      to the nearest metre, and costs nothing.
    * `control` — casual or guided, which is simply whether a plan was resolved.
+     A session and a route are both 'guided' here, because both use the live
+     screen that draws steps; `plan.kind` says which.
 
    `phase` deliberately does NOT become 'fault' when the safety key is out.
    Pulling the key is an interrupt, not a route: it preempts whatever is on
@@ -543,20 +544,28 @@ function adapt(raw) {
                 measured: raw.beltKph || 0,
                 slipping: !!raw.slipping },
 
-    /* Guided owns incline only. `speed` here is a suggestion the user is free
-       to ignore, and nothing may apply it to the belt. */
+    /* On a route `suggest` is a suggestion the user is free to ignore, and
+       nothing may apply it to the belt. In a session there is no suggestion:
+       the session drives the belt (fork-only, 2026-11-21), and `pace` is the
+       speed it is holding, with any press on speed or incline kept as an
+       offset from the step until the next one. */
     targets:  { speed: raw.targetSpeed || 0,
                 incline: raw.targetIncline || 0,
                 suggest: raw.suggestPace || 0,
+                pace: raw.targetPace || 0,
+                speedOffset: raw.speedOffset || 0,
+                gradeOffset: raw.gradeOffset || 0,
                 inclineAuto: !!raw.inclineAuto },
 
-    /* `elapsed` here is *plan* time — wrapped into the current lap when the
-       route is a circuit, so a hero drawing one lap of ground can use it
-       directly and never has to know about looping. `session.elapsed` is still
-       the whole walk. */
+    /* `elapsed` here is *plan* time: in a session it includes anything NEXT
+       or END skipped, so it can run ahead of `session.elapsed`, which is
+       still the whole walk. On a route it is metres. `loops` and `lap` are
+       always false and 1 since the open circuit went with Guided; they stay
+       so no UI reads undefined. */
     plan:     { name: raw.plan || '', steps: planSteps,
-                loops: !!raw.planLoops,
-                lap: raw.planLap || 1,
+                kind: raw.planKind || '',
+                loops: false,
+                lap: 1,
                 elapsed: raw.planElapsed == null ? (raw.elapsed || 0) : raw.planElapsed },
 
     segment:  { index: raw.segment || 0, count: segments,
@@ -574,7 +583,8 @@ function adapt(raw) {
                        : Math.round(raw.segmentLeft || 0) + ' m')
                   : mmss(raw.segmentLeft || 0),
                 nextName: raw.nextLabel || '',
-                nextIncline: raw.nextIncline || 0 },
+                nextIncline: raw.nextIncline || 0,
+                nextSpeed: raw.nextSpeed || 0 },
 
 
     session:  { elapsed: raw.elapsed || 0,
@@ -877,30 +887,6 @@ function profiles() {
 }
 
 /**
- * Walk lengths. 5 is a bench test — every segment in about thirty seconds.
- *
- * **0 means open**: no end, and the route becomes a circuit that comes round
- * again rather than running out. Kotlin resolves it at OPEN_LOOP_MIN and
- * reports which lap you are on; nothing but STOP finishes the walk.
- */
-var DURATIONS = [5, 15, 20, 30, 45, 0];
-function durationLabel(m) { return m > 0 ? String(m) : 'OPEN'; }
-
-/* The four templates, mirroring Plan.kt. `points` are the real segment
-   inclines from that file, so a sparkline on the picker is the walk you are
-   about to get rather than a decorative squiggle. */
-var SHAPES = [
-  { id: 'steady',  name: 'Steady',        blurb: 'One long hill, honestly earned',
-    points: [0, 2, 3.5, 5, 3, 1.5, 0] },
-  { id: 'rolling', name: 'Rolling hills', blurb: 'Uneven ground, no two the same',
-    points: [0, 4, -1, 6.5, 1, 9.5, 2, 5.5, -1.5, 3, 0] },
-  { id: 'pyramid', name: 'Pyramid',       blurb: 'Up in steps, down in steps',
-    points: [0, 2.5, 5, 7.5, 10, 11.5, 7, 4, 1.5, 0] },
-  { id: 'climb',   name: 'The long climb', blurb: 'One ascent, with a sting near the top',
-    points: [0, 3, 5.5, 4.5, 7.5, 11, 6, 2.5, 0] }
-];
-
-/**
  * @param onStep  called with (stepId, flow) whenever the step changes, so the
  *                UI can show the right card. Steps: profile | control | plan.
  *
@@ -917,9 +903,7 @@ function flow(onStep) {
   var f = {
     step: 'profile',
     profile: defaultWalker() || profiles()[0],
-    control: 'guided',   // the accented, recommended card on screen 03
-    minutes: 30,
-    shape: 'rolling',
+    control: 'session',  // the accented, recommended card on screen 03
     /** A recorded route's id, or null for one of the four templates. */
     route: null,
     /** Walk the chosen route out and then home again — see loopMark(). Belongs
@@ -940,13 +924,20 @@ function flow(onStep) {
       return f.go('control');
     },
 
-    /* Three choices, not two: casual, one of the four shapes, or a route you
-       have walked. Routes are a peer of "free" and "shaped", not a variant of
-       one — and putting them on the screen before keeps the plan step to four
-       entries, which is all it has room for above the BACK button. */
+    /* Three choices: casual, a structured session, or a route you have
+       walked. A session is built and picked on its own shared screen
+       (stride-session.js) rather than on a plan step, because it has a dozen
+       numbers to set and the plan step has room for four cards. Its START
+       arms the belt itself; backing out of it lands here again. */
     setControl: function (c) {
       f.control = c;
       if (c === 'casual') return f.commit();
+      if (c === 'session') {
+        if (global.StrideSession) {
+          global.StrideSession.open({ onClose: function () { f.go('control'); } });
+        }
+        return f;
+      }
       // Either picker is entered clean, so a route chosen and backed out of
       // cannot arm the belt when a shape is picked afterwards.
       f.route = null;
@@ -984,9 +975,6 @@ function flow(onStep) {
       catch (e) { return []; }
     },
 
-    setMinutes: function (m) { f.minutes = m; return f; },
-    setShape:   function (s) { f.shape = s;   return f; },
-
     /** The one call that arms the belt. */
     commit: function () {
       if (f.control === 'casual') { global.Stride.choose(); return f; }
@@ -995,7 +983,6 @@ function flow(onStep) {
         if (f.route) global.Stride.chooseRoute(f.route, f.loop);
         return f;
       }
-      global.Stride.chooseGuided(f.shape, f.minutes);
       return f;
     },
 
@@ -1235,6 +1222,113 @@ function phoneSheet(what) {
   document.body.appendChild(o);
 }
 
+/**
+ * The summary's QR code, drawn straight into the page (fork-only, 2026-11-21).
+ *
+ * The code is how a session leaves the console, so it is on the summary from
+ * the first frame rather than behind a button. Safe to call on every render:
+ * it asks Kotlin once per summary, and only asks again, a few times, if the
+ * answer was a failure that can clear by itself (the export still being
+ * written, Wi-Fi just reconnecting). No file at all, for a guest or a walk too
+ * short to keep, is said in one line rather than drawn as an empty box.
+ */
+var inlineEl = null, inlineTries = 0, inlineRetry = null, inlineOk = false;
+function phoneInline(el) {
+  if (!el) return;
+  if (el === inlineEl && (inlineOk || inlineRetry)) return;
+  if (el !== inlineEl) { phoneInlineClear(); inlineEl = el; inlineTries = 0; }
+  if (inlineTries >= 5) return;
+  inlineTries++;
+  var r;
+  try { r = JSON.parse(global.Stride.phoneShare('walk')); }
+  catch (e) { r = { ok: false, message: 'This build cannot send walks to a phone.' }; }
+  inlineOk = !!r.ok;
+  if (r.ok) {
+    el.innerHTML = '<div style="width:100%;height:100%;box-sizing:border-box;background:#fff;' +
+      'border-radius:14px;padding:10px">' + r.qr + '</div>' +
+      '<div style="margin-top:12px;font-size:15px;line-height:1.4;text-align:center;opacity:.8">' +
+      'Scan with your phone on the same Wi-Fi for the .fit</div>';
+    var svg = el.querySelector('svg');
+    if (svg) { svg.style.width = '100%'; svg.style.height = '100%'; svg.style.display = 'block'; }
+  } else {
+    el.innerHTML = '<div style="font-size:17px;line-height:1.5;text-align:center;opacity:.8;' +
+      'padding-top:40%">' + esc(r.message || 'Not available.') + '</div>';
+    inlineRetry = global.setTimeout(function () {
+      inlineRetry = null;
+      if (inlineEl === el && el.isConnected !== false) phoneInline(el);
+    }, 3000);
+  }
+}
+
+/** Leaving the summary: put the code away and let the server wind down. */
+function phoneInlineClear() {
+  if (!inlineEl) return;
+  global.clearTimeout(inlineRetry);
+  inlineRetry = null;
+  inlineEl.innerHTML = '';
+  inlineEl = null;
+  inlineOk = false;
+  inlineTries = 0;
+  try { global.Stride.phoneDone(); } catch (e) {}
+}
+
+/* ===========================================================================
+   NEXT STEP WARNING (fork-only, 2026-11-21)
+   ---------------------------------------------------------------------------
+   Ten seconds before a session changes step, a card says what is coming and
+   counts down to it. A rep that starts with no warning is a rep started badly:
+   the belt is already climbing to 13 km/h by the time anyone has read the
+   dial. There is no TTS on this console, so it has to be seen.
+
+   One card for all five interfaces, styled inline like the phone sheet, and
+   called from each one's window.render with the raw frame so Original, which
+   does not go through adapt(), gets it too. It takes no taps
+   (pointer-events:none): it sits over the live screen at the very moment
+   somebody may want SPEED or STOP, and must never be the thing in the way.
+   =========================================================================== */
+var WARN_SEC = 10;
+var warnEl = null, warnKey = '';
+function stepWarning(raw) {
+  raw = raw || {};
+  var left = raw.segmentLeft || 0;
+  var show = raw.planKind === 'session' &&
+             String(raw.mode || '').toLowerCase() === 'running' &&
+             !raw.dmk && !!raw.nextLabel && left > 0 && left <= WARN_SEC;
+  if (!show) {
+    if (warnEl) warnEl.style.display = 'none';
+    warnKey = '';
+    return;
+  }
+  if (!warnEl) {
+    warnEl = document.createElement('div');
+    warnEl.style.cssText = 'position:absolute;left:400px;top:160px;width:480px;z-index:150;' +
+      'box-sizing:border-box;padding:22px 30px;border-radius:22px;pointer-events:none;' +
+      'background:rgba(8,11,13,.94);color:#eef3f4;border:2px solid #f0b43c;' +
+      'box-shadow:0 12px 40px rgba(0,0,0,.5);font-family:inherit;display:none';
+    document.body.appendChild(warnEl);
+  }
+  var secs = Math.max(1, Math.ceil(left));
+  var spec = [];
+  if (raw.nextSpeed > 0) spec.push(Number(raw.nextSpeed).toFixed(1) + ' km/h');
+  spec.push(Number(raw.nextIncline || 0).toFixed(1) + ' %');
+  var key = secs + '|' + raw.nextLabel + '|' + spec.join();
+  if (key !== warnKey) {
+    warnKey = key;
+    warnEl.innerHTML =
+      '<div style="display:flex;align-items:center">' +
+        '<div style="flex:1;min-width:0">' +
+          '<div style="font-size:14px;letter-spacing:.3em;color:#f0b43c">NEXT INTERVAL</div>' +
+          '<div style="margin-top:8px;font-size:30px;white-space:nowrap;overflow:hidden;' +
+            'text-overflow:ellipsis">' + esc(raw.nextLabel) + '</div>' +
+          '<div style="margin-top:6px;font-size:22px;color:#aebdc1">' + spec.join(' &middot; ') + '</div>' +
+        '</div>' +
+        '<div style="width:110px;text-align:right;font-size:72px;font-weight:300;' +
+          'font-variant-numeric:tabular-nums;color:#f0b43c">' + secs + '</div>' +
+      '</div>';
+  }
+  warnEl.style.display = 'block';
+}
+
 /* Fine on a tap, coarse on a hold, the way the physical buttons behave.
    A flat coarse repeat was 3.6 km/h per second and the target "just took off";
    a uniformly slow one made a deliberate run to 18 km/h tedious. So it
@@ -1342,7 +1436,7 @@ function fanLabel(n) { return n ? n + ' OF 4' : 'OFF'; }
    one carrying its own copy of the stub.
    =========================================================================== */
 
-var BRIDGE = ['choose', 'chooseGuided', 'chooseRoute', 'skipWarmup', 'skipCooldown', 'pause',
+var BRIDGE = ['choose', 'chooseSession', 'nextStep', 'chooseRoute', 'skipWarmup', 'skipCooldown', 'pause',
               'setSpeed',
               'resume', 'end', 'home', 'speed', 'incline', 'fan', 'setFan',
               'setWalker', 'ackDmk', 'dim', 'setUi', 'wakeBoard',
@@ -1397,6 +1491,26 @@ function stub() {
                    [1600,2100,-2],[2100,2500,-3],[2500,3030,0]] }
     ]);
   };
+  /* Sessions kept in memory, so the Session screen can be used end to end in
+     a browser. One saved to start with, so the list is not empty. */
+  var pretendSessions = [{
+    id: 's-demo', name: '8 x 1 min', kind: 'interval',
+    warmup: { sec: 600, grade: 1, kph: 7 }, cooldown: { sec: 300, grade: 0, kph: 6 },
+    interval: { on: { sec: 60, grade: 1, kph: 13 }, off: { sec: 60, grade: 1, kph: 7 }, reps: 8 }
+  }];
+  s.sessionsJson = function () { return JSON.stringify(pretendSessions); };
+  s.saveSession = function (json) {
+    var o; try { o = JSON.parse(json); } catch (e) { return ''; }
+    if (!o.id) o.id = 's-' + Date.now();
+    pretendSessions = pretendSessions.filter(function (x) { return x.id !== o.id; });
+    pretendSessions.push(o);
+    console.log('Stride.saveSession', o);
+    return o.id;
+  };
+  s.deleteSession = function (id) {
+    pretendSessions = pretendSessions.filter(function (x) { return x.id !== id; });
+  };
+
   /* A pretend code on a desktop: right size, right colours, scans as nothing. */
   s.phoneShare = function (what) {
     var d = '';
@@ -1568,20 +1682,20 @@ function demo(opts) {
   var screen = q.screen || opts.screen || 'live-guided';
   var guided = screen === 'live-guided' || screen === 'warmup' || opts.guided;
 
-  /* Rolling hills at 30 minutes, resolved the way Plan.kt would. */
-  var shape = SHAPES[1].points;
-  var total = 30 * 60, steps = [], at = 0;
-  var shares = [0.11, 0.09, 0.07, 0.12, 0.06, 0.05, 0.09, 0.08, 0.07, 0.12, 0.14];
-  var labels = ['Settle in', 'First rise', 'Down the far side', 'The long one',
-                'Short recovery', 'The wall', 'Over the top', 'One more',
-                'Long descent', 'The last drag', 'Cool down'];
-  var inclines = [0, 4, -1, 6.5, 1, 9.5, 2, 5.5, -1.5, 3, 0];
-  for (var i = 0; i < shares.length; i++) {
-    var end = i === shares.length - 1 ? total : at + total * shares[i];
-    steps.push({ start: Math.round(at), end: Math.round(end),
-                 incline: inclines[i], label: labels[i] });
-    at = end;
+  /* 6 x 1 min, resolved the way Sessions.kt would: warm-up, on/off reps with
+     the last off dropped, cool-down. */
+  var steps = [], at = 0;
+  function addStep(sec, label, incline, speed) {
+    steps.push({ start: at, end: at + sec, incline: incline, endIncline: incline,
+                 speed: speed, endSpeed: speed, label: label });
+    at += sec;
   }
+  addStep(300, 'Warm-up', 1, 6);
+  for (var i = 1; i <= 6; i++) {
+    addStep(60, 'Rep ' + i + '/6 · On', 2, 12);
+    if (i < 6) addStep(60, 'Rep ' + i + '/6 · Off', 1, 6);
+  }
+  addStep(300, 'Cool-down', 0, 5);
 
   var t = opts.elapsed == null ? 512 : opts.elapsed;   // mid-walk, mid-hill
   var dist = 720, cals = 78;
@@ -1611,7 +1725,7 @@ function demo(opts) {
     }
     if (!step) { step = steps[steps.length - 1]; idx = steps.length; }
 
-    var speed = moving ? (phase === 'warmup' ? 2.0 : 5.4) : 0;
+    var speed = moving ? (phase === 'warmup' ? 2.0 : guided ? step.speed : 5.4) : 0;
     /* A pulse that wanders through all five zones every two minutes, so the
        zone gauge can be watched moving. */
     var demoHr = moving ? Math.round(125 + 45 * Math.sin(t / 19)) : 0;
@@ -1631,11 +1745,13 @@ function demo(opts) {
       ramping: '', phaseLeft: phase === 'warmup' ? 161 : 0, boardMode: 2,
       avgSpeed: 5.2, maxSpeed: 6.1, avgIncline: 3.4, maxIncline: 9.5,
       who: 'Sam',
-      plan: guided ? 'Rolling hills' : '',
+      plan: guided ? '6 x 1 min' : '', planKind: guided ? 'session' : '',
+      targetPace: guided ? step.speed : 0, nextSpeed: guided && steps[idx] ? steps[idx].speed : 0,
+      nextLabel: guided && steps[idx] ? steps[idx].label : '', nextIncline: guided && steps[idx] ? steps[idx].incline : 0,
       segment: guided ? idx : 0, segments: guided ? steps.length : 0,
       segmentLabel: guided ? step.label : '',
       segmentLeft: guided ? step.end - t : 0,
-      suggestPace: guided ? 5.6 : 0, inclineAuto: true,
+      suggestPace: 0, inclineAuto: true,
       lap: moving || phase === 'paused' ? lapN : 0,
       lapElapsed: t - lapT, lapDistance: dist - lapD,
       lapHr: 128, lapClimb: Math.round((dist - lapD) * 0.04 * 10) / 10,
@@ -1646,7 +1762,10 @@ function demo(opts) {
     });
   }
 
-  if (guided && global.plan) global.plan({ name: 'Rolling hills', steps: steps });
+  if (guided && global.plan) global.plan({ name: '6 x 1 min', kind: 'session', steps: steps });
+  global.Stride.nextStep = function () {
+    for (var j = 0; j < steps.length; j++) if (t < steps[j].end) { t = steps[j].end; return; }
+  };
 
   frame();
   setInterval(frame, 200);
@@ -1658,7 +1777,7 @@ function demo(opts) {
     if (!pick) return;
     screen = pick;
     guided = pick === 'live-guided' || pick === 'warmup';
-    if (guided && global.plan) global.plan({ name: 'Rolling hills', steps: steps });
+    if (guided && global.plan) global.plan({ name: '6 x 1 min', kind: 'session', steps: steps });
     if (pick === 'welcome') resetDerived();
   });
 
@@ -1780,8 +1899,6 @@ global.STRIDE = {
   lapPace: lapPace,
   profiles: profiles,
   allowGuest: allowGuest,
-  DURATIONS: DURATIONS,
-  SHAPES: SHAPES,
 
   UI_META: UI_META,
   people: people,
@@ -1791,6 +1908,9 @@ global.STRIDE = {
 
   tap: tap,
   phoneSheet: phoneSheet,
+  phoneInline: phoneInline,
+  phoneInlineClear: phoneInlineClear,
+  stepWarning: stepWarning,
   stepper: stepper,
   hold: hold,
   suppress: suppress,
@@ -1802,7 +1922,6 @@ global.STRIDE = {
   limits: limits,
   paceAt: paceAt,
   km: km,
-  durationLabel: durationLabel,
   fanName: fanName,
   fanLabel: fanLabel,
 

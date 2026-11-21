@@ -391,25 +391,29 @@ class MainActivity : Activity() {
         const val MAX_STEP_MS = 2000L
 
         /**
-         * How fast a guided walk is allowed to move the deck.
+         * How fast a route is allowed to move the deck.
          *
-         * One percent at a time, no more often than every three seconds, so the
-         * biggest jump in any template — flat to nine percent — takes about half
-         * a minute to arrive rather than landing under someone mid-stride.
+         * One percent at a time, no more often than every three seconds, so a
+         * jump from flat to nine percent takes about half a minute to arrive
+         * rather than landing under someone mid-stride.
          */
         const val INCLINE_STEP = 1.0
         const val INCLINE_EVERY_MS = 3000L
 
         /**
-         * How long one lap of an open-ended route is.
+         * How often a session may send the deck a new grade.
          *
-         * "Open" means walk until you have had enough, and the ground repeats
-         * rather than being invented — so a template becomes a circuit and you
-         * go round it. Twenty minutes is long enough to have a shape and short
-         * enough that you actually come round again; at thirty most walks would
-         * never see the same hill twice, which is the same as not looping.
+         * A session does not creep the way a route does: at 1 % every 3 s a
+         * flat-to-6 % rep spends eighteen seconds of its minute getting there.
+         * It sends the step's grade once and lets the deck motor move at its
+         * own pace, which is the speed the console's own incline keys get.
+         * This only spaces out the writes along a progression's ramp.
          */
-        const val OPEN_LOOP_MIN = 20
+        const val SESSION_GRADE_EVERY_MS = 1000L
+        /** Grade resolution a session commands, in %: the incline keys' step. */
+        const val SESSION_GRADE_STEP = 0.5
+        /** How long before a session step changes its warning card goes up. */
+        const val STEP_WARN_SEC = 10.0
 
         val TELEMETRY = listOf(
             FitPro.Field.ACTUAL_KPH,
@@ -565,11 +569,11 @@ class MainActivity : Activity() {
         if (Session.isMoving(session)) Power.watts(walkerPerson?.weightKg ?: 0.0, kph, grade)
         else 0.0
 
-    // --- guided walk ---------------------------------------------------------
+    // --- routes and sessions --------------------------------------------------
     /** Empty on a casual walk. Set once at START and never rewritten mid-walk. */
     @Volatile private var planName = ""
     /**
-     * The route being walked, if this is a route rather than a template.
+     * The route being walked, if this is a route rather than a session.
      *
      * Held alongside `planSteps` rather than replacing it: the HUD's sparkline
      * and segment counter read the steps, so a route fills both — the steps for
@@ -581,21 +585,44 @@ class MainActivity : Activity() {
     @Volatile private var planSteps: List<Plan.Step> = emptyList()
     @Volatile private var stepIndex = -1
 
-    /**
-     * An open-ended route: walk until you decide to stop, and the ground goes
-     * round again rather than being invented. The template becomes a circuit
-     * one [OPEN_LOOP_MIN] lap long, and nothing ever ends the walk except the
-     * person on it.
-     */
-    @Volatile private var planLoops = false
-    @Volatile private var planLap = 1
-    /** Plan time, wrapped into the current lap. Equals elapsed when not looping. */
+    /** Plan time: session seconds plus whatever NEXT and END have skipped. */
     @Volatile private var planElapsed = 0.0
 
     /**
-     * The pace Sam settled at during the opening segment. Every suggestion is
-     * relative to this, so a plan adapts to the day instead of assuming a number
-     * that was true whenever the template was written.
+     * A structured session (see [Sessions]) rather than a route. The one kind
+     * of plan that drives belt speed: fork-only, 2026-11-21.
+     */
+    @Volatile private var planIsSession = false
+    /**
+     * Seconds of plan skipped by NEXT, and by END jumping to the cool-down.
+     * Plan time is session time plus this, so a skip moves the plan without
+     * touching the clock the summary and the .fit report.
+     */
+    @Volatile private var planSkipSec = 0.0
+    /**
+     * A press on speed or incline during a session, kept as an offset from the
+     * plan rather than a takeover. Somebody who nudges a progression up by
+     * 0.3 km/h wants the next twenty minutes to carry on climbing from there,
+     * not to have the climb switched off. Back to zero at every step.
+     */
+    @Volatile private var speedOffset = 0.0
+    @Volatile private var gradeOffset = 0.0
+    /** What the session last commanded, to tell its own writes from a press. */
+    @Volatile private var planKph = 0.0
+    @Volatile private var planGrade = 0.0
+    /**
+     * Speed stepped down to a standstill by hand during a session. Below the
+     * machine's minimum there is no slow, only stopped, so this is somebody
+     * stopping the belt, and the plan does not argue it back up before the
+     * next step.
+     */
+    @Volatile private var speedHeld = false
+    private var lastSessionGradeAt = 0L
+
+    /**
+     * The pace Sam settled at during a route's opening stretch. Every
+     * suggestion is relative to this, so a route adapts to the day instead of
+     * assuming a number that was true when it was walked outdoors.
      */
     @Volatile private var baselineKph = 0.0
 
@@ -877,38 +904,36 @@ class MainActivity : Activity() {
             repaint()
         }
 
+        // --- structured sessions (fork-only, 2026-11-21; see Sessions.kt) ---
+        @JavascriptInterface fun sessionsJson(): String = sessions.json()
+        /** Insert or replace by id; returns the id, or "" if it did not validate. */
+        @JavascriptInterface fun saveSession(json: String): String = sessions.save(json)
+        @JavascriptInterface fun deleteSession(id: String) = sessions.delete(id)
+
         /**
-         * Start a guided walk.
+         * Start a structured session, from the full JSON rather than an id so a
+         * session edited for today and not saved can still be run.
          *
-         * Goes straight to ACTIVE rather than through the two-minute WARMUP
-         * phase: every template opens with its own flat settle segment, and
-         * having both would mean warming up twice. The plan's stated duration is
-         * therefore the whole walk, closing segment included, which is what a
-         * duration selector implies.
+         * Goes straight to ACTIVE rather than through the global WARMUP phase:
+         * the session carries its own warm-up, with its own speed and grade,
+         * and having both would mean warming up twice. This tap is what lets
+         * the plan drive the belt for the rest of the session, so it is the
+         * only way in.
          */
-        /**
-         * @param minutes  the walk's length, or **0 for an open-ended route** —
-         *                 a [OPEN_LOOP_MIN] circuit walked until STOP, with the
-         *                 hills coming round again rather than running out.
-         */
-        @JavascriptInterface fun chooseGuided(templateId: String, minutes: Int) {
+        @JavascriptInterface fun chooseSession(json: String) {
             if (dmk) return
-            val template = Plan.byId(templateId) ?: run {
-                Log.w(TAG, "no such template: $templateId")
-                return
-            }
-            planLoops = minutes <= 0
-            planLap = 1
-            planElapsed = 0.0
+            val def = try { Sessions.parse(org.json.JSONObject(json)) } catch (e: Exception) { null }
+                ?: run {
+                    Log.w(TAG, "session: rejected, did not validate")
+                    return
+                }
+            clearPlan()
             // Clamped against what this board actually reports, not what the
-            // template hoped for.
-            planSteps = Plan.resolve(template,
-                if (planLoops) cfg.openLapMin() else minutes, minGrade, maxGrade)
-            planName = template.name
-            stepIndex = -1
-            baselineKph = 0.0
+            // session was written for.
+            planSteps = Sessions.resolve(def, minKph, maxKph, minGrade, maxGrade)
+            planName = def.name.ifEmpty { if (def.kind == "interval") "Intervals" else "Progression" }
+            planIsSession = true
             inclineAuto = true
-            lastInclineMoveAt = 0L
 
             workout = WORKOUT
             resetSession()
@@ -917,21 +942,37 @@ class MainActivity : Activity() {
             activeSince = SystemClock.elapsedRealtime()
             phaseEndsAt = 0L
             targetKph = 0.0
-            targetGrade = 0.0
-            rampTo = cfg.warmupKph()
-            rampReason = "warmup"
-            pendingWrite = mapOf(
-                FitPro.Field.GRADE to 0.0,
-                FitPro.Field.WORKOUT_MODE to FitPro.Mode.RUNNING.toDouble(),
-            )
-            Log.i(TAG, "guided walk: ${template.name}, " +
-                    (if (planLoops) "open (${cfg.openLapMin()} min circuit)" else "$minutes min") +
-                    ", ${planSteps.size} segments, grade clamped to $minGrade..$maxGrade")
-            // The ground is fixed for the whole walk — one lap of it, if this is
-            // a circuit — so it goes over once rather than riding along with
-            // every frame.
+            // The first tick of sessionDrive ramps to the warm-up speed and
+            // sends its grade; this only puts the board into a state that will
+            // accept them.
+            rampTo = 0.0
+            rampReason = ""
+            pendingWrite = mapOf(FitPro.Field.WORKOUT_MODE to FitPro.Mode.RUNNING.toDouble())
+            Log.i(TAG, "session: ${planName} (${def.kind}), ${planSteps.size} steps, " +
+                    "${"%.0f".format(planSteps.last().endSec / 60)} min, " +
+                    "speed clamped to $minKph..$maxKph, grade to $minGrade..$maxGrade")
+            // The steps are fixed for the whole session, so they go over once
+            // rather than riding along with every frame.
             pushPlan()
             repaint()
+        }
+
+        /**
+         * Straight to the next step of a session: a warm-up cut short, a rep
+         * skipped. From the last step it ends the session, the same way the
+         * plan running out does.
+         */
+        @JavascriptInterface fun nextStep() {
+            if (!planIsSession || session != Session.ACTIVE || dmk) return
+            val steps = planSteps
+            val next = steps.getOrNull(stepIndex + 1)
+            if (next == null) {
+                Log.i(TAG, "session: NEXT on the last step — finishing")
+                if (!stopping) requestFinish()
+                return
+            }
+            planSkipSec += (next.startSec - planElapsed).coerceAtLeast(0.0)
+            Log.i(TAG, "session: NEXT — skipping to ${next.label}")
         }
 
         /**
@@ -945,8 +986,8 @@ class MainActivity : Activity() {
         /**
          * Start a walk on a recorded route.
          *
-         * No `minutes`, unlike [chooseGuided], and that is deliberate rather
-         * than an omission: a route has its own length. Cutting it to fit a
+         * No `minutes`, and that is deliberate rather than an omission: a
+         * route has its own length. Cutting it to fit a
          * time slot means never reaching the summit, which is the reason for
          * walking it again.
          *
@@ -963,10 +1004,8 @@ class MainActivity : Activity() {
             }
             val r = if (loop) found.outAndBack() else found
 
+            clearPlan()
             route = r
-            planLoops = false
-            planLap = 1
-            planElapsed = 0.0
             // Steps carry the same ground so the HUD can draw it, expressed in
             // metres. Nothing reads them as seconds while a route is active —
             // routeTick owns the position — but the sparkline and the segment
@@ -1112,6 +1151,21 @@ class MainActivity : Activity() {
                 repaint()
                 return
             }
+            // A session carries its own cool-down, with its own speed and
+            // grade, so END goes there rather than to the global one; END in
+            // the cool-down is the session finished.
+            if (planIsSession && session == Session.ACTIVE) {
+                val cool = planSteps.lastOrNull()
+                if (cool != null && stepIndex < planSteps.lastIndex) {
+                    planSkipSec += (cool.startSec - planElapsed).coerceAtLeast(0.0)
+                    Log.i(TAG, "session: END — straight to the cool-down")
+                } else if (!stopping) {
+                    Log.i(TAG, "session: END in the cool-down — finishing")
+                    requestFinish()
+                }
+                repaint()
+                return
+            }
             val now = SystemClock.elapsedRealtime()
             // Coming out of a pause the clock is already stopped; restart it so
             // the cool-down is counted like any other part of the workout.
@@ -1174,6 +1228,28 @@ class MainActivity : Activity() {
 
         @JavascriptInterface fun speed(delta: Double) {
             if (!Session.isMoving(session) || dmk) return
+            // In a session a press moves the plan, not the belt directly: the
+            // offset rides on top of whatever the step is doing, so a nudge
+            // during a ramp lands on the ramp's goal rather than wherever the
+            // belt happened to be on the way. Stepping down off the bottom of
+            // the range is still a stop, handled below as it always was.
+            if (planIsSession && session == Session.ACTIVE && !stopping) {
+                if (speedHeld && delta > 0) {
+                    speedHeld = false
+                    speedOffset = 0.0
+                    Log.i(TAG, "session: speed handed back to the plan")
+                    return
+                }
+                if (!speedHeld && targetKph + delta >= minKph) {
+                    // Pinned to the board's range, so pressing + at the top of
+                    // it does not bank an offset that is spent later, unseen.
+                    val base = currentStep()?.kphAt(planElapsed) ?: targetKph
+                    speedOffset = (speedOffset + delta).coerceIn(minKph - base, maxKph - base)
+                    return
+                }
+                speedHeld = true
+                Log.i(TAG, "session: speed stepped down to a stop by hand")
+            }
             rampTo = 0.0; rampReason = ""   // manual control abandons the ramp
             var next = targetKph + delta
             // Below the machine's minimum there is no "slow", only stopped —
@@ -1191,12 +1267,17 @@ class MainActivity : Activity() {
          * held the + button until you got there. Accepting an offer should be
          * one tap.
          *
-         * Still a suggestion: this only runs because somebody touched it. The
-         * plan never sets the belt speed on its own, which is the rule the
-         * whole guided walk is built on.
+         * Still a suggestion: this only runs because somebody touched it. A
+         * route never sets the belt speed on its own. A session does, and there
+         * a set speed becomes the offset from the plan, as a press does.
          */
         @JavascriptInterface fun setSpeed(kph: Double) {
             if (!Session.isMoving(session) || dmk) return
+            if (planIsSession && session == Session.ACTIVE && !stopping && kph >= minKph) {
+                currentStep()?.let { speedOffset = kph - it.kphAt(planElapsed) }
+                speedHeld = false
+                return
+            }
             rampTo = 0.0; rampReason = ""   // as with any manual change
             targetKph = if (kph < minKph) 0.0 else kph.coerceIn(0.0, maxKph)
             pendingWrite = mapOf(FitPro.Field.KPH to targetKph)
@@ -1213,21 +1294,24 @@ class MainActivity : Activity() {
          */
         @JavascriptInterface fun lap() {
             if (!Session.isMoving(session) || dmk) return
-            val lap = laps.mark(sessionMs(), elapsedSec(), sessionDistance) ?: return
-            writeRecording { it.lap(lap) }
-            lapFlashIndex = lap.index
-            lapFlashUntil = SystemClock.elapsedRealtime() + LAP_FLASH_MS
-            Log.i(TAG, "lap ${lap.index}: ${"%.0f".format(lap.activeSec)} s, " +
-                    "${"%.0f".format(lap.distanceM)} m")
+            markLap()
         }
 
         @JavascriptInterface fun incline(delta: Double) {
-            // Touching the hill takes it back from the plan until the next
-            // segment. Same rule as speed abandoning its ramp: the person on the
-            // treadmill outranks the schedule.
+            // In a session the press becomes an offset on the step's grade, for
+            // the same reason as speed: a progression nudged up a notch should
+            // keep progressing from there. sessionDrive sends it.
+            if (planIsSession && session == Session.ACTIVE && !dmk) {
+                val base = currentStep()?.inclineAt(planElapsed) ?: targetGrade
+                gradeOffset = (gradeOffset + delta).coerceIn(minGrade - base, maxGrade - base)
+                return
+            }
+            // On a route, touching the hill takes it back from the plan until
+            // the next segment. Same rule as speed abandoning its ramp: the
+            // person on the treadmill outranks the schedule.
             if (inclineAuto) {
                 inclineAuto = false
-                Log.i(TAG, "guided: incline taken over by hand for this segment")
+                Log.i(TAG, "route: incline taken over by hand for this segment")
             }
             // A hand on the incline outranks the levelling nag, exactly as it
             // outranks the plan. Otherwise setting a slope from the summary
@@ -1647,6 +1731,12 @@ class MainActivity : Activity() {
      * fetched at the moment somebody is standing on the belt choosing it.
      */
     private val routes by lazy { Routes(this) }
+    private val sessions by lazy { Sessions(this) }
+
+    /** False while another app (a film, usually) is in front of STRIDE. */
+    @Volatile private var inFront = true
+    /** The ten-second "next interval" card drawn over other apps; see StepWarning. */
+    private val stepWarn by lazy { StepWarning(this) }
 
     /** Every walk this console has recorded — see History. */
     private val history by lazy { History(this) }
@@ -2002,12 +2092,11 @@ class MainActivity : Activity() {
         fanOffNags = 0
     }
 
-    /** The segment after [idx], wrapping on a circuit and null at the end. */
+    /** The step after [idx], or null at the end. */
     private fun nextStep(idx: Int): Plan.Step? {
         val steps = planSteps
         if (steps.isEmpty() || idx < 0) return null
-        if (idx + 1 < steps.size) return steps[idx + 1]
-        return if (planLoops) steps.firstOrNull() else null
+        return steps.getOrNull(idx + 1)
     }
 
     private fun clearPlan() {
@@ -2017,9 +2106,15 @@ class MainActivity : Activity() {
         stepIndex = -1
         baselineKph = 0.0
         inclineAuto = false
-        planLoops = false
-        planLap = 1
         planElapsed = 0.0
+        planIsSession = false
+        planSkipSec = 0.0
+        speedOffset = 0.0
+        gradeOffset = 0.0
+        planKph = 0.0
+        planGrade = 0.0
+        speedHeld = false
+        lastSessionGradeAt = 0L
     }
 
     /** The segment the walk is currently in, or null on a casual walk. */
@@ -2029,18 +2124,24 @@ class MainActivity : Activity() {
     }
 
     /**
-     * Run the guided walk: advance the segment, then nudge the deck towards
-     * whatever that segment asks for.
-     *
-     * Plan time is *session* time, which already excludes anything spent
-     * paused — a walk interrupted for two minutes should still be the walk that
-     * was chosen, not two minutes shorter.
+     * Close the current lap and open the next: the LAP button, and every step
+     * boundary of a session, so intervals arrive in Strava and Coros as laps
+     * the way a watch would record them.
      */
+    private fun markLap() {
+        val lap = laps.mark(sessionMs(), elapsedSec(), sessionDistance) ?: return
+        writeRecording { it.lap(lap) }
+        lapFlashIndex = lap.index
+        lapFlashUntil = SystemClock.elapsedRealtime() + LAP_FLASH_MS
+        Log.i(TAG, "lap ${lap.index}: ${"%.0f".format(lap.activeSec)} s, " +
+                "${"%.0f".format(lap.distanceM)} m")
+    }
+
     /**
      * Run a route: the same job as [planTick], driven by **distance travelled**
      * rather than by the clock.
      *
-     * This is the one substantive difference between a route and a template,
+     * This is the one substantive difference between a route and a session,
      * and it is not a detail. A route was recorded outdoors, where the hill
      * arrived at a certain point on the ground. Replay it on a timer while
      * walking slower indoors than out and the hill arrives late, the walk ends
@@ -2061,7 +2162,7 @@ class MainActivity : Activity() {
             if (!stopping) {
                 Log.i(TAG, "route: ${r.name} complete at ${"%.0f".format(metres)} m")
                 // The route is *not* cleared here, for the same reason a
-                // template is not — see planTick. Clearing it dropped the guided
+                // session is not — see planTick. Clearing it dropped the guided
                 // view, and what the console fell back to was the casual lap
                 // counter, which is where a finished route used to spend its
                 // last few seconds. It goes on the way out of the summary.
@@ -2084,56 +2185,136 @@ class MainActivity : Activity() {
         driveIncline(r.inclineAt(metres))
     }
 
+    /**
+     * Run a session: advance the step, then drive speed and grade towards it.
+     *
+     * Plan time is *session* time, which already excludes anything spent
+     * paused (a session interrupted for two minutes is still the session that
+     * was chosen, not two minutes shorter), plus whatever NEXT and END skipped.
+     */
     private fun planTick(elapsed: Double) {
         val steps = planSteps
-        if (steps.isEmpty()) return
-        val lap = steps.last().endSec
+        if (steps.isEmpty() || !planIsSession) return
+        planElapsed = elapsed + planSkipSec
 
-        if (planLoops) {
-            // Round again. The hills are the same hills — that is the point of
-            // a circuit — so nothing is regenerated and nothing ends the walk
-            // but STOP.
-            if (lap > 0) {
-                val was = planLap
-                planLap = (elapsed / lap).toInt() + 1
-                planElapsed = elapsed % lap
-                if (planLap != was) Log.i(TAG, "guided: lap $planLap of the circuit")
+        // The whole plan is done: stop here rather than running the belt on.
+        if (planElapsed >= steps.last().endSec) {
+            if (!stopping) {
+                Log.i(TAG, "session: complete — winding the belt down")
+                // The plan is deliberately *not* cleared here. Clearing it
+                // drops the session view and the console falls back to the
+                // casual oval; it is also what the summary reads its name off,
+                // so a session would be recapped as a manual walk. It is
+                // cleared on the way out of the summary instead.
+                requestFinish()
             }
-        } else {
-            planElapsed = elapsed
-            // The whole plan is done: stop here rather than running the belt on.
-            if (elapsed >= lap) {
-                if (!stopping) {
-                    Log.i(TAG, "guided: plan complete — winding the belt down")
-                    // The plan is deliberately *not* cleared here. Clearing it
-                    // drops the guided view and the console falls back to the
-                    // casual oval; it is also what the summary reads its name
-                    // off, so a guided walk would be recapped as a manual one.
-                    // It is cleared on the way out of the summary instead.
-                    requestFinish()
-                }
-                return
-            }
+            return
         }
 
         val idx = steps.indexOfFirst { planElapsed < it.endSec }.coerceAtLeast(0)
         if (idx != stepIndex) {
             val step = steps[idx]
-            // The opening segment is where he chooses a pace; everything after
-            // is suggested relative to it.
-            if (stepIndex == 0 && baselineKph <= 0.0) {
-                baselineKph = if (targetKph > 0.0) targetKph else cfg.warmupKph()
-                Log.i(TAG, "guided: baseline pace ${"%.1f".format(baselineKph)} km/h")
-            }
+            // Every boundary is a lap, as on a watch running the same workout.
+            // Not the first: entering the warm-up is the walk starting.
+            if (stepIndex >= 0) markLap()
             stepIndex = idx
-            // A new segment hands the deck back, whatever happened in the last one.
-            inclineAuto = true
-            Log.i(TAG, "guided: segment ${idx + 1}/${steps.size} — ${step.label}, " +
-                    "${"%.1f".format(step.incline)}%")
+            // A new step is the plan again, whatever was pressed in the last.
+            speedOffset = 0.0
+            gradeOffset = 0.0
+            speedHeld = false
+            val ramps = step.endKph != step.kph || step.endIncline != step.incline
+            Log.i(TAG, "session: step ${idx + 1}/${steps.size} — ${step.label}, " +
+                    "${"%.1f".format(step.kph)} km/h, ${"%.1f".format(step.incline)}%" +
+                    (if (ramps) " to ${"%.1f".format(step.endKph)} km/h, " +
+                        "${"%.1f".format(step.endIncline)}%" else ""))
+        }
+        sessionDrive(steps.getOrNull(stepIndex) ?: return)
+    }
+
+    /**
+     * The ten-second warning, when STRIDE is behind another app. In front, the
+     * page draws its own (stepWarning in stride-core.js) from the same numbers.
+     */
+    private fun warnOverOtherApps(step: Plan.Step?) {
+        val next = nextStep(stepIndex)
+        val left = if (step != null) step.endSec - planElapsed else 0.0
+        if (inFront || !planIsSession || session != Session.ACTIVE || dmk ||
+            step == null || next == null || left <= 0.0 || left > STEP_WARN_SEC) {
+            stepWarn.hide()
+            return
+        }
+        stepWarn.update(next.label,
+            "${"%.1f".format(next.kph)} km/h · ${"%.1f".format(next.incline)} %",
+            Math.ceil(left).toInt().coerceAtLeast(1))
+    }
+
+    /**
+     * Hold the belt and the deck where the session's step says, offsets
+     * included.
+     *
+     * **Speed is driven here, and only here** (fork-only, 2026-11-21). It is
+     * never written directly: the goal is handed to [rampStep], which climbs
+     * and descends at [RAMP_KPH_PER_SEC] and goes nowhere while the session is
+     * paused, winding down or the safety key is out. Every goal is clamped to
+     * what the board reports.
+     *
+     * A press on the console's own keys is noticed here too. Those never
+     * reach the bridge; the poll loop adopts the board's echo into
+     * `targetKph`/`targetGrade` once our writes have settled, so a difference
+     * from what this last commanded, with no ramp of ours in flight, can only
+     * be somebody's hand, and it becomes the offset.
+     */
+    private fun sessionDrive(step: Plan.Step) {
+        if (dmk || stopping || session != Session.ACTIVE) return
+        val now = SystemClock.elapsedRealtime()
+
+        // --- speed ---
+        if (rampTo <= 0.0 && !speedHeld && planKph > 0.0 &&
+            Math.abs(targetKph - planKph) > 0.05) {
+            if (targetKph < minKph) {
+                speedHeld = true
+                Log.i(TAG, "session: belt stopped by hand — holding until the next step")
+            } else {
+                speedOffset += targetKph - planKph
+                Log.i(TAG, "session: speed changed on the console — offset " +
+                        "${"%+.1f".format(speedOffset)} km/h")
+            }
+            planKph = targetKph
+        }
+        if (!speedHeld) {
+            val goal = quantise((step.kphAt(planElapsed) + speedOffset)
+                .coerceIn(minKph, maxKph), KPH_STEP)
+            if (Math.abs(goal - targetKph) > 0.05 && Math.abs(goal - rampTo) > 0.05) {
+                rampTo = goal
+                rampReason = "session"
+            }
+            planKph = goal
         }
 
-        val step = steps.getOrNull(stepIndex) ?: return
-        driveIncline(step.incline)
+        // --- grade ---
+        if (pendingWrite == null && lastSessionGradeAt > 0L &&
+            now - lastWriteMs > FOLLOW_SETTLE_MS &&
+            Math.abs(targetGrade - planGrade) > 0.25) {
+            gradeOffset += targetGrade - planGrade
+            planGrade = targetGrade
+            Log.i(TAG, "session: incline changed on the console — offset " +
+                    "${"%+.1f".format(gradeOffset)}%")
+        }
+        val grade = quantise((step.inclineAt(planElapsed) + gradeOffset)
+            .coerceIn(minGrade, maxGrade), SESSION_GRADE_STEP).coerceIn(minGrade, maxGrade)
+        if (Math.abs(grade - targetGrade) > 0.05) {
+            if (pendingWrite == null && now - lastSessionGradeAt >= SESSION_GRADE_EVERY_MS) {
+                targetGrade = grade
+                planGrade = grade
+                lastSessionGradeAt = now
+                pendingWrite = mapOf(FitPro.Field.GRADE to grade)
+            }
+        } else if (lastSessionGradeAt == 0L) {
+            // Already where the first step wants it: nothing to send, but the
+            // console-key watch above needs to know the plan has spoken.
+            planGrade = grade
+            lastSessionGradeAt = now
+        }
     }
 
     /**
@@ -2161,7 +2342,7 @@ class MainActivity : Activity() {
         }
         targetGrade = next.coerceIn(minGrade, maxGrade)
         pendingWrite = mapOf(FitPro.Field.GRADE to targetGrade)
-        Log.i(TAG, "guided: incline -> ${"%.1f".format(targetGrade)}% (goal ${"%.1f".format(goal)}%)")
+        Log.i(TAG, "route: incline -> ${"%.1f".format(targetGrade)}% (goal ${"%.1f".format(goal)}%)")
     }
 
     /** Warm-up rolls into the workout; cool-down rolls into the summary. */
@@ -2487,7 +2668,7 @@ class MainActivity : Activity() {
             addJavascriptInterface(Bridge(), "Stride")
             /* A UI switch reloads the page, and the plan is the one thing sent
                once rather than at poll rate — so it has to go over again or the
-               new document draws a guided walk with no ground ahead of it. */
+               new document draws a session or route with no ground ahead of it. */
             webViewClient = object : android.webkit.WebViewClient() {
                 override fun onPageFinished(view: WebView?, url: String?) {
                     if (planSteps.isNotEmpty()) pushPlan()
@@ -2980,6 +3161,7 @@ class MainActivity : Activity() {
             if (route != null) routeTick(sessionDistance) else planTick(elapsedNow)
         }
         val step = currentStep()
+        warnOverOtherApps(step)
         val floors = walkerPerson?.zoneFloors() ?: emptyList()
 
         return Snapshot(
@@ -3025,7 +3207,7 @@ class MainActivity : Activity() {
             segmentLabel = step?.label ?: "",
             // Against plan time, not session time — on a circuit those differ
             // by however many laps have gone by.
-            // Seconds on a template, **metres** on a route — the steps of a
+            // Seconds in a session, **metres** on a route — the steps of a
             // route carry distance in the same fields, which is what let the
             // HUD render a 275 m opening stretch as "4:35 left". The UI is
             // told which it is rather than being left to guess.
@@ -3035,21 +3217,26 @@ class MainActivity : Activity() {
                 else -> (step.endSec - planElapsed).coerceAtLeast(0.0)
             },
             segmentLeftIsDistance = route != null,
-            // On a circuit the "next" segment after the last one is the first
-            // one again, because the ground comes round rather than running out.
             nextLabel = nextStep(stepIndex)?.label ?: "",
             nextIncline = nextStep(stepIndex)?.incline ?: 0.0,
+            nextSpeed = if (planIsSession) nextStep(stepIndex)?.kph ?: 0.0 else 0.0,
             planTotalSec = planSteps.lastOrNull()?.endSec ?: 0.0,
             // A route's steps are in metres, so its ascent is real and
-            // measurable. A template's are in seconds and its climb depends on
-            // how fast it is walked, so it does not claim one.
+            // measurable. A session's are in seconds and its climb depends on
+            // how fast it is run, so it does not claim one.
             planClimbM = route?.climbM ?: 0.0,
-            planPeakIncline = planSteps.maxOfOrNull { it.incline } ?: 0.0,
+            planPeakIncline = planSteps.maxOfOrNull { maxOf(it.incline, it.endIncline) } ?: 0.0,
             planElapsed = planElapsed,
-            planLap = planLap,
-            planLoops = planLoops,
-            // No opinion until he has settled on a pace to be relative to.
-            suggestPace = if (step != null && baselineKph > 0.0) {
+            planKind = when { planIsSession -> "session"; route != null -> "route"; else -> "" },
+            // What the session is holding the belt to right now, offset
+            // included; the screen shows it where a route shows its suggestion.
+            targetPace = if (planIsSession && step != null && !speedHeld)
+                (step.kphAt(planElapsed) + speedOffset).coerceIn(minKph, maxKph) else 0.0,
+            speedOffset = if (planIsSession) speedOffset else 0.0,
+            gradeOffset = if (planIsSession) gradeOffset else 0.0,
+            // No opinion until he has settled on a pace to be relative to, and
+            // none at all in a session: there is nothing to accept.
+            suggestPace = if (!planIsSession && step != null && baselineKph > 0.0) {
                 (baselineKph + step.paceDelta).coerceIn(minKph, maxKph)
             } else 0.0,
             inclineAuto = inclineAuto,
@@ -3073,12 +3260,15 @@ class MainActivity : Activity() {
                 .put("start", Math.round(s.startSec))
                 .put("end", Math.round(s.endSec))
                 .put("incline", s.incline)
+                .put("endIncline", s.endIncline)
+                .put("speed", s.kph)
+                .put("endSpeed", s.endKph)
                 .put("label", s.label))
         }
         return org.json.JSONObject()
             .put("name", planName)
-            .put("loops", planLoops)
-            // Route steps are metres, template steps are seconds. They share
+            .put("kind", when { planIsSession -> "session"; route != null -> "route"; else -> "" })
+            // Route steps are metres, session steps are seconds. They share
             // the field names (`startSec`/`endSec`) for historical reasons, so
             // the drawing cannot tell them apart without being told — and it
             // has to, because only one of the two can be integrated into an
@@ -3637,10 +3827,14 @@ class MainActivity : Activity() {
             View.SYSTEM_UI_FLAG_IMMERSIVE_STICKY
         SwitchBubble.front(true)
         SwitchBubble.sync(this, cfg)
+        inFront = true
     }
 
     override fun onPause() {
-        if (!duplicate) SwitchBubble.front(false)
+        if (!duplicate) {
+            SwitchBubble.front(false)
+            inFront = false
+        }
         super.onPause()
     }
 
@@ -3649,6 +3843,7 @@ class MainActivity : Activity() {
         // close the running window's button, radio and recording.
         if (duplicate) { super.onDestroy(); return }
         if (live === this) live = null
+        stepWarn.hide()
         // Closed here while the corrected start is still known. Left to the
         // next start-up sweep, the file would lose it and keep only the raw,
         // possibly 2010, date.

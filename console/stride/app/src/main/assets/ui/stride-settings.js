@@ -1034,15 +1034,13 @@
       stepper('warmup_kph', S.warmup_kph || 2, 1, 6, 0.5, 'km/h', 1)));
     sc.appendChild(g2);
 
-    var g3 = group('Guided walks');
+    var g3 = group('Routes');
     g3.appendChild(row('Incline changes',
-      'How fast the deck may move during a plan. Gentler is kinder underfoot, and no ' +
-      'plan is ever allowed to move it all at once.',
+      'How fast the deck may move along a route. Gentler is kinder underfoot, and no ' +
+      'route is ever allowed to move it all at once. Sessions send each step’s grade ' +
+      'straight away.',
       segment('incline_rate', [['gentle', 'Gentle'], ['normal', 'Normal'], ['quick', 'Quick']],
         S.incline_rate || 'normal')));
-    g3.appendChild(row('Open circuit lap',
-      'How long one lap is before the ground repeats. Nothing ends an open circuit but STOP.',
-      stepper('open_lap_min', S.open_lap_min || 20, 5, 45, 5, 'min')));
     sc.appendChild(g3);
 
     var g4 = group('Reported by the board');

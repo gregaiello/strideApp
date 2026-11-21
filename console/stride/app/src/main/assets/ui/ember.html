@@ -21,7 +21,7 @@
    Vertical budget, fixed:
 
        34         status row
-       76 – 138   segment header (guided only)
+       76 – 138   segment header (a session or a route only)
       142 – 410   hero: lap track, elevation profile, or warm-up countdown
       418 – 504   empty (was the coach ribbon, removed 2026-11-09)
       514        rule
@@ -116,21 +116,14 @@ button{font-family:inherit;color:inherit;background:none;border:none;
 .foot.left{left:60px}
 .foot.right{right:60px}
 
-/* ---- plan picker --------------------------------------------------------- */
-.mins{position:absolute;left:60px;top:108px;width:1160px;display:flex}
-.mins .card{width:170px;height:96px;margin-right:16px}
-.mins .card .big{position:absolute;left:0;top:28px;width:100%;font-size:30px}
-.mins .card.pick .big{font-weight:400}
-.mins .unit{height:96px;line-height:96px;margin-left:18px;
-            font-size:16px;letter-spacing:.2em;color:var(--dim)}
+/* ---- plan picker (routes only) ------------------------------------------- */
 .shapes{position:absolute;left:60px;top:290px;width:1160px;display:flex}
 .shapes .card{flex:1;height:300px;margin-right:20px;text-align:left}
 .shapes .card:last-child{margin-right:0}
 .row2 .card.gone{display:none}
-/* A route carries its own length, so the duration row goes and the cards move
-   up into the space it leaves. Never more than four cards either way. */
-.routes .mins,
-.routes #capHow{display:none}
+/* Only routes reach this step (a session is set up in its own overlay,
+   stride-session.js), and a route carries its own length, so there is no
+   duration row above the cards. Never more than four. */
 /* One route must not stretch to fill a row built for four. */
 .routes .shapes .card{flex:0 0 280px}
 .shapes .nm{position:absolute;left:28px;top:28px;font-size:26px;font-weight:300;letter-spacing:.02em}
@@ -189,6 +182,15 @@ button{font-family:inherit;color:inherit;background:none;border:none;
 .gauge .bar u{position:absolute;top:-3px;width:1px;height:12px;background:var(--dim);
               left:40px;opacity:.5}
 .gauge .sug{margin-top:22px;font-size:19px;color:var(--accent);min-height:26px}
+
+/* NEXT, during a session only: skips to the plan's next step. It takes the
+   empty band under the hero, centred under the step it skips, so it covers
+   neither figure nor the telemetry. A hairline box like every other quiet
+   control here. */
+.nextkey{position:absolute;left:560px;top:428px;width:160px;height:64px;
+         border:1px solid var(--line);background:var(--panel);border-radius:3px;
+         font-size:16px;letter-spacing:.2em;color:var(--dim);text-align:center}
+.nextkey.down{background:#241c14}
 
 /* ---- hero: casual lap track ---------------------------------------------- */
 .hero{position:absolute;left:352px;top:142px;width:576px;height:268px;display:none}
@@ -318,17 +320,22 @@ button{font-family:inherit;color:inherit;background:none;border:none;
                    font-size:22px;letter-spacing:.2em;color:var(--alert)}
 
 /* ---- summary ------------------------------------------------------------- */
-.sum .h{position:absolute;left:0;top:150px;width:1280px;text-align:center;
+/* The summary is two columns now: the words and figures centred in the left
+   880px, and the phone QR code on the right as soon as the summary is up
+   (STRIDE.phoneInline fills .qr). DONE stays centred on the panel, below
+   both. */
+.sum .qr{position:absolute;left:900px;top:150px;width:320px;height:320px}
+.sum .h{position:absolute;left:0;top:150px;width:880px;text-align:center;
         font-size:76px;font-weight:200;letter-spacing:-.01em}
-.sum .k{position:absolute;left:0;top:256px;width:1280px;text-align:center;
+.sum .k{position:absolute;left:0;top:256px;width:880px;text-align:center;
         font-size:16px;letter-spacing:.28em;color:var(--accent)}
-.sum .grid{position:absolute;left:100px;top:360px;width:1080px;display:flex;
+.sum .grid{position:absolute;left:50px;top:360px;width:800px;display:flex;
            border-top:1px solid var(--line);border-bottom:1px solid var(--line)}
 .sum .grid div.cell{flex:1;padding:34px 0;text-align:center}
 .sum .grid .kk{font-size:13px;letter-spacing:.22em;color:var(--dim)}
-.sum .grid .vv{font-size:52px;font-weight:200;margin-top:12px;font-variant-numeric:tabular-nums}
+.sum .grid .vv{font-size:46px;font-weight:200;margin-top:12px;font-variant-numeric:tabular-nums}
 .sum .grid .vv .u{font-size:22px;color:var(--dim);margin-left:3px}
-.sum .note{position:absolute;left:0;top:566px;width:1280px;text-align:center;
+.sum .note{position:absolute;left:0;top:566px;width:880px;text-align:center;
            font-size:19px;color:var(--dim)}
 .sum .done{position:absolute;left:490px;top:640px;width:300px;height:104px;
            border:1px solid var(--accent);border-radius:52px;background:#1a1510}
@@ -410,21 +417,19 @@ button{font-family:inherit;color:inherit;background:none;border:none;
 
 
   <div class="step gone" id="stControl">
-    <div class="ask" id="controlAsk">On your own, or with a plan?</div>
+    <div class="ask" id="controlAsk">On your own, or a session?</div>
     <div class="row2">
       <button class="card" id="pickCasual">
         <span class="big">Casual</span><span class="sub">Nothing planned. Laps count themselves.</span></button>
-      <button class="card pick" id="pickGuided">
-        <span class="big">Guided</span><span class="sub">A shape of hills, and a voice to walk it with.</span></button>
+      <button class="card pick" id="pickSession">
+        <span class="big">Session</span><span class="sub">Intervals or progression</span></button>
       <button class="card gone" id="pickRoutes">
         <span class="big">My routes</span><span class="sub">A walk you have already done, hills and all.</span></button>
     </div>
   </div>
 
   <div class="step gone" id="stPlan">
-    <div class="cap" id="capHow" style="position:absolute;left:60px;top:70px">HOW LONG</div>
-    <div class="mins" id="mins"></div>
-    <div class="cap" id="capShape" style="position:absolute;left:60px;top:250px">THE SHAPE OF IT</div>
+    <div class="cap" id="capShape" style="position:absolute;left:60px;top:250px">WHICH ROUTE</div>
     <div class="shapes" id="shapes"></div>
   </div>
 
@@ -500,6 +505,8 @@ button{font-family:inherit;color:inherit;background:none;border:none;
     </div>
   </div>
 
+  <button class="nextkey" id="btnNext" style="display:none">NEXT &rsaquo;</button>
+
   <!-- hero C · warm-up and cool-down -->
   <div class="hero" id="heroWarm">
     <div class="t" id="warmTitle">WARM-UP</div>
@@ -546,8 +553,8 @@ button{font-family:inherit;color:inherit;background:none;border:none;
   <div class="h" id="sumHead">Nice work</div>
   <div class="sumdate" id="sumDate" hidden>Date unknown: the console clock was not set during this workout.</div>
   <button class="lapspill" id="lapsPill" hidden>LAPS</button>
-  <!-- Mirrors the laps pill: the walk's .fit to a phone, by QR code (fork-only). -->
-  <button class="lapspill" id="phonePill" style="left:44px;right:auto">TO PHONE &rsaquo;</button>
+  <!-- The walk's .fit to a phone, by QR code, straight away (fork-only). -->
+  <div class="qr" id="sumQr"></div>
   <div class="lapsheet" id="lapSheet" hidden><div class="lk">Laps</div><div class="laptable"><table><thead><tr><th>Lap</th><th>Time</th><th>Distance</th><th>Pace</th><th>Avg HR</th><th>Climb</th></tr></thead><tbody id="lapRows"></tbody></table></div><div class="lhint">Tap anywhere to close</div></div>
   <div class="k" id="sumKind">&mdash;</div>
   <div class="grid">
@@ -589,13 +596,15 @@ button{font-family:inherit;color:inherit;background:none;border:none;
 
 <script src="stride-core.js"></script>
 <script src="stride-settings.js"></script>
+<script src="stride-session.js"></script>
 <script>
 /* Kotlin calls window.render(state) at 5 Hz and window.plan(p) once per walk.
    Everything that is not this UI's look — the track maths, the elevation
    profile, the setup flow, touch handling — comes from stride-core. */
 const standalone = STRIDE.stub();
 
-/* The plan's suggested pace, so tapping it can take it. */
+/* The plan's suggested pace, so tapping it can take it. Zero during a
+   session, whose line shows the speed the plan is already holding. */
 let suggestKph = 0;
 const $ = STRIDE.$, tap = STRIDE.tap, mmss = STRIDE.mmss, nf = STRIDE.nf;
 
@@ -651,7 +660,7 @@ function drawProfile(){
       $(lineId).setAttribute('y2', y.toFixed(1));
       // +22 puts the label beside its own line: the svg is inset that far.
       $(axId).style.top = (y + 22 - 6).toFixed(0) + 'px';
-      // A route's axis is metres of elevation, a template's is percent of
+      // A route's axis is metres of elevation, a session's is percent of
       // grade. prof.unit says which; assuming '%' labelled real terrain wrong.
       $(axId).textContent = (prof.byDistance ? Math.round(v)
                                              : Math.round(v * 10) / 10) + prof.unit;
@@ -704,27 +713,9 @@ function buildPeople(){
 buildPeople();
 document.addEventListener('stride-settings-closed', buildPeople);
 
-STRIDE.DURATIONS.forEach(m => {
-  const b = document.createElement('button');
-  b.className = 'card' + (m === flow.minutes ? ' pick' : '');
-  b.innerHTML = '<span class="big">' + STRIDE.durationLabel(m) + '</span>';
-  tap(b, () => {
-    flow.setMinutes(m);
-    [].forEach.call($('mins').children, c => c.classList.toggle('pick', c === b));
-  });
-  $('mins').appendChild(b);
-});
-(() => {
-  const u = document.createElement('div');
-  u.className = 'unit';
-  u.textContent = 'MINUTES';
-  $('mins').appendChild(u);
-})();
-
-/* The sparklines are the real segment inclines from Plan.kt, so the card shows
-   the walk you are about to get rather than a decorative squiggle. */
-/* `routeId` is set only for the route cards, and is what earns the loop mark:
-   a template has no direction to reverse. */
+/* The sparklines are the route's own gradient profile, so the card shows the
+   walk you are about to get rather than a decorative squiggle. `routeId` is
+   what earns the loop mark. */
 function shapeCard(name, blurb, points, chosen, onPick, routeId) {
   const b = document.createElement('button');
   b.className = 'card' + (chosen ? ' pick' : '');
@@ -750,56 +741,49 @@ function shapeCard(name, blurb, points, chosen, onPick, routeId) {
   $('shapes').appendChild(b);
 }
 
-/* Either the four shapes or up to four routes — never a mix, and never five.
-   Routes are chosen on the screen before this one. */
+/* Up to four routes, never five. Only routes reach this step: a session is
+   set up in its own overlay. */
 function renderPlan() {
   $('shapes').innerHTML = '';
-  const picking = flow.pickingRoute();
-  $('stPlan').classList.toggle('routes', picking);
-  $('capShape').textContent = picking ? 'WHICH ROUTE' : 'THE SHAPE OF IT';
-  if (picking) {
-    flow.routes().slice(0, 4).forEach(r => {
-      /* Looped, the card says what the walk will actually be — twice the
-         ground, and the climb recomputed the way Route.outAndBack does it,
-         because an out-and-back's ascent is the outbound climb *plus* the
-         outbound descent and is not twice anything. */
-      const on = flow.looped(r.id);
-      const km = (r.distance_m || 0) / 1000 * (on ? 2 : 1);
-      const up = on ? STRIDE.loopedClimb(r) : (r.climb_m || 0);
-      shapeCard(r.name || 'Route',
-                km.toFixed(2) + ' km · ' + Math.round(up) + ' m of climb' +
-                  (on ? ' · there and back' : ''),
-                STRIDE.routePoints(r), r.id === flow.route,
-                () => flow.setRoute(r.id), r.id);
-    });
-    return;
-  }
-  STRIDE.SHAPES.forEach(s =>
-    shapeCard(s.name, s.blurb, s.points, s.id === flow.shape,
-              () => flow.setShape(s.id)));
+  $('stPlan').classList.add('routes');
+  flow.routes().slice(0, 4).forEach(r => {
+    /* Looped, the card says what the walk will actually be — twice the
+       ground, and the climb recomputed the way Route.outAndBack does it,
+       because an out-and-back's ascent is the outbound climb *plus* the
+       outbound descent and is not twice anything. */
+    const on = flow.looped(r.id);
+    const km = (r.distance_m || 0) / 1000 * (on ? 2 : 1);
+    const up = on ? STRIDE.loopedClimb(r) : (r.climb_m || 0);
+    shapeCard(r.name || 'Route',
+              km.toFixed(2) + ' km · ' + Math.round(up) + ' m of climb' +
+                (on ? ' · there and back' : ''),
+              STRIDE.routePoints(r), r.id === flow.route,
+              () => flow.setRoute(r.id), r.id);
+  });
 }
 
 /* Offered only when there is something behind it. */
 function refreshControl() {
   $('pickRoutes').classList.toggle('gone', flow.routes().length === 0);
   $('controlAsk').textContent = flow.routes().length
-    ? 'On your own, a plan, or one of yours?' : 'On your own, or with a plan?';
+    ? 'On your own, a session, or one of yours?' : 'On your own, or a session?';
 }
 
 renderPlan();
 
 tap($('pickCasual'), () => flow.setControl('casual'));
-tap($('pickGuided'), () => { flow.setControl('guided'); renderPlan(); });
+// Opens the shared session overlay; closing it comes back to this step.
+tap($('pickSession'), () => flow.setControl('session'));
 tap($('pickRoutes'), () => { flow.setControl('routes'); renderPlan(); });
 tap($('btnBack'),    () => flow.back());
 /* Tapping the suggestion takes it. Accepting the plan's number used to
    mean holding + until you reached it. */
 tap($('suggest'), () => { if (suggestKph > 0) Stride.setSpeed(suggestKph); });
 
-/* Tapping a plan used to arm the belt immediately, so choosing a shape and
-   then a duration was impossible — the walk had already started. Selection
-   and starting are separate now. */
+/* Tapping a route only selects it, so the loop mark can be set before the
+   belt is armed. BEGIN is what starts it. */
 tap($('btnBegin'), () => flow.commit());
+tap($('btnNext'),  () => Stride.nextStep());
 
 /* ---- settings ------------------------------------------------------------ */
 function buildUis(){
@@ -847,7 +831,6 @@ tap($('btnDone'),   () => Stride.home());
 tap($('btnLap'), () => Stride.lap());
 tap($('lapsPill'), () => { $('lapSheet').hidden = false; });
 tap($('lapSheet'), () => { $('lapSheet').hidden = true; });
-tap($('phonePill'), () => STRIDE.phoneSheet('walk'));
 tap($('btnFan'),    () => Stride.fan());
 
 STRIDE.stepper($('btnSpeedUp'),     d => Stride.speed(d),    0.1, 0.5);
@@ -903,6 +886,8 @@ setInterval(() => {
 function showScreen(id){
   if (id === shownScreen) return;
   ['scSetup','scLive','scSummary'].forEach(s => $(s).classList.toggle('on', s === id));
+  // Leaving the summary takes its QR code down and tells the phone server.
+  if (shownScreen === 'scSummary') STRIDE.phoneInlineClear();
   if (id === 'scSetup'){
     flow.reset();
     STRIDE.resetDerived();
@@ -918,6 +903,7 @@ function showScreen(id){
 
 /* ---- the frame ----------------------------------------------------------- */
 window.render = function(raw){
+  STRIDE.stepWarning(raw);   // ten seconds before a session step changes
   const s = STRIDE.adapt(raw);
   const screen = STRIDE.screenFor(s);
 
@@ -932,7 +918,9 @@ window.render = function(raw){
   shownPhase = s.phase;
 
   const guided = s.control === 'guided';
+  const session = s.plan.kind === 'session';
   const timed  = s.phase === 'warmup' || s.phase === 'cooldown';
+  $('btnNext').style.display = session && s.phase === 'active' ? '' : 'none';
 
   $('who').textContent = (s.profile || '').toUpperCase();
   $('modeWord').textContent =
@@ -946,6 +934,7 @@ window.render = function(raw){
   $('incline').textContent = s.belt.incline.toFixed(1);
   $('speed').textContent   = s.belt.speed.toFixed(1);
   $('inclineNote').textContent = !guided ? 'yours'
+                               : session ? 'set for you' + offsetText(s.targets.gradeOffset)
                                : s.targets.inclineAuto ? 'set for you'
                                : 'yours until the next stretch';
   /* The bar spans the deck's whole range as the board reports it, with a zero
@@ -965,13 +954,23 @@ window.render = function(raw){
   /* Which way it points depends on where the pace already is — "lift to 6.0"
      while walking 7.0 reads as the plan ignoring the walker, and the tap would
      have slowed him down. Within a tenth there is nothing to suggest. */
-  const suggestDelta = s.targets.suggest - s.belt.speed;
-  const suggesting = guided && s.targets.suggest > 0 && !timed
-                     && Math.abs(suggestDelta) > 0.15;
-  suggestKph = suggesting ? s.targets.suggest : 0;
-  $('suggest').textContent = suggesting
-    ? (suggestDelta > 0 ? 'lift to ' : 'ease to ') + s.targets.suggest.toFixed(1) + ' km/h'
-    : '';
+  /* A session is the exception: there the plan does drive the belt, so this
+     line states the speed it is holding, plus the walker's own nudge, and is
+     not something to tap. */
+  if (session){
+    suggestKph = 0;
+    $('suggest').textContent = s.targets.pace > 0 && !timed
+      ? 'plan ' + s.targets.pace.toFixed(1) + ' km/h' + offsetText(s.targets.speedOffset)
+      : '';
+  } else {
+    const suggestDelta = s.targets.suggest - s.belt.speed;
+    const suggesting = guided && s.targets.suggest > 0 && !timed
+                       && Math.abs(suggestDelta) > 0.15;
+    suggestKph = suggesting ? s.targets.suggest : 0;
+    $('suggest').textContent = suggesting
+      ? (suggestDelta > 0 ? 'lift to ' : 'ease to ') + s.targets.suggest.toFixed(1) + ' km/h'
+      : '';
+  }
 
   $('elapsed').textContent = mmss(s.session.elapsed);
   $('dist').textContent    = STRIDE.km(s.session.distance);
@@ -1006,9 +1005,12 @@ window.render = function(raw){
         (planName + ' · ' + s.plan.steps.length + ' stretches ahead').toUpperCase();
     } else {
       $('segName').textContent = s.segment.name;
+      // A session also names the next step's speed: the plan will change it.
+      const next = session && s.segment.nextSpeed > 0
+        ? ' · next ' + s.segment.nextSpeed.toFixed(1) + ' km/h' : '';
       $('segMeta').textContent = ((s.plan.loops ? 'lap ' + s.plan.lap + ' · ' : '') +
         planName + ' · ' + s.segment.index + ' of ' + s.segment.count + ' · ' +
-        s.segment.leftLabel + ' left').toUpperCase();
+        s.segment.leftLabel + ' left' + next).toUpperCase();
     }
   }
 
@@ -1031,6 +1033,13 @@ window.render = function(raw){
       : 'The belt has stopped. Nothing is lost.';
   }
 };
+
+/* A press during a session shifts the plan rather than taking it over; this
+   is that shift, as " +0.3", or nothing while there is none. */
+function offsetText(v){
+  if (!v || Math.abs(v) < 0.05) return '';
+  return ' ' + (v > 0 ? '+' : '−') + Math.abs(v).toFixed(1);
+}
 
 function renderLaps(s){
   const d = s.session.distance;
@@ -1115,6 +1124,7 @@ function renderLapTable(s){
 
 function renderSummary(s){
   renderLapTable(s);
+  STRIDE.phoneInline($('sumQr'));
   $('sumHead').textContent  = 'Nice work, ' + (s.profile || 'you');
   $('sumKind').textContent  = s.plan.name
     ? (Math.round(s.session.elapsed / 60) + ' minutes of ' + s.plan.name).toUpperCase()

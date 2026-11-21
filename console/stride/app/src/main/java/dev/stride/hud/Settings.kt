@@ -67,7 +67,6 @@ class Settings(context: Context) {
         const val COOLDOWN_MIN = "cooldown_min"
         const val WARMUP_KPH = "warmup_kph"
         const val INCLINE_RATE = "incline_rate"   // "gentle" | "normal" | "quick"
-        const val OPEN_LAP_MIN = "open_lap_min"
 
         // --- heart rate ---
         const val HR_SOURCE = "hr_source"         // "auto" | "strap" | "grips"
@@ -97,11 +96,11 @@ class Settings(context: Context) {
         const val NAS_DIR = "nas_dir"
 
         /**
-         * How fast a guided walk may move the deck, as three named presets
+         * How fast a route may move the deck, as three named presets
          * rather than two millisecond fields.
          *
          * `INCLINE_STEP` and `INCLINE_EVERY_MS` are a safety-shaped pair: they
-         * are the reason the biggest jump in any template takes half a minute
+         * are the reason the biggest jump on any route takes half a minute
          * to arrive rather than landing under someone mid-stride. Exposed as
          * raw numbers, somebody eventually sets five percent every five hundred
          * milliseconds. Named presets keep the reasoning attached.
@@ -314,7 +313,6 @@ class Settings(context: Context) {
     fun warmupMs(): Long = prefs.getInt(WARMUP_MIN, 2) * 60_000L
     fun cooldownMs(): Long = prefs.getInt(COOLDOWN_MIN, 2) * 60_000L
     fun warmupKph(): Double = prefs.getFloat(WARMUP_KPH, 2.0f).toDouble()
-    fun openLapMin(): Int = prefs.getInt(OPEN_LAP_MIN, 20)
 
     fun inclineStep(): Double =
         INCLINE_RATES[prefs.getString(INCLINE_RATE, "normal")]?.first ?: 1.0
@@ -396,7 +394,6 @@ class Settings(context: Context) {
         .put(COOLDOWN_MIN, prefs.getInt(COOLDOWN_MIN, 2))
         .put(WARMUP_KPH, prefs.getFloat(WARMUP_KPH, 2.0f).toDouble())
         .put(INCLINE_RATE, prefs.getString(INCLINE_RATE, "normal"))
-        .put(OPEN_LAP_MIN, openLapMin())
 
         .put(HR_SOURCE, hrSource())
         .put(HR_ADDR, hrAddr())
@@ -426,7 +423,7 @@ class Settings(context: Context) {
             ALLOW_GUEST, CLOCK_24, KEEP_AWAKE ->
                 e.putBoolean(key, value == "true" || value == "1")
 
-            NAS_PORT, WARMUP_MIN, COOLDOWN_MIN, OPEN_LAP_MIN, SLEEP_MIN ->
+            NAS_PORT, WARMUP_MIN, COOLDOWN_MIN, SLEEP_MIN ->
                 e.putInt(key, value.toIntOrNull() ?: 0)
 
             WARMUP_KPH ->

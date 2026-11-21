@@ -144,19 +144,13 @@ button{font-family:inherit;color:inherit;background:none;border:none;text-align:
 .row2 .bay.pick .sub{color:#a9c4c9}
 
 .cap{position:absolute;left:34px;font-size:13px;letter-spacing:.3em;color:var(--dim)}
-.mins{position:absolute;left:34px;top:134px;width:1212px;display:flex}
-.mins .bay{flex:1;height:100px;margin-right:12px;border-radius:8px}
-.mins .bay:last-child{margin-right:0}
-.mins .nm{position:absolute;left:0;top:30px;width:100%;text-align:center;font-size:32px}
-.mins .bay.pick .nm{color:var(--accent)}
 .shapes{position:absolute;left:34px;top:308px;width:1212px;display:flex}
 .shapes .bay{flex:1;height:280px;margin-right:16px;border-radius:10px}
 .shapes .bay:last-child{margin-right:0}
 .row2 .bay.gone{display:none}
-/* A route carries its own length, so the duration row goes. Four bays either
-   way — routes replace the shapes rather than joining them. */
-.routes .mins,
-.routes #capHow{display:none}
+/* Only routes reach the plan step (a session is set up in its own overlay,
+   stride-session.js), and a route carries its own length, so there is no
+   duration row. Never more than four bays. */
 .routes .shapes .bay{flex:0 0 292px}
 .shapes .nm{position:absolute;left:24px;top:24px;font-size:22px;letter-spacing:.06em}
 .shapes .sub{position:absolute;left:24px;top:58px;font-size:13px;color:var(--dim)}
@@ -215,6 +209,14 @@ button{font-family:inherit;color:inherit;background:none;border:none;text-align:
            font-size:13px;letter-spacing:.3em;color:var(--dim)}
 .hero{display:none}
 .hero.on{display:block}
+/* NEXT, during a session only: skips to the plan's next step. Top-right of
+   the centre bay, above the profile and clear of both dials, so it is near the
+   step it skips and covers no reading. */
+.centre .next{position:absolute;right:12px;top:10px;width:96px;height:48px;display:none;
+              background:#1b2023;border:1px solid #2c3337;border-radius:6px;
+              text-align:center;font-size:14px;letter-spacing:.2em;color:var(--soft)}
+.centre .next.on{display:block}
+.centre .next.down{background:#0f1214}
 
 #heroLaps svg{position:absolute;left:0;top:56px;width:480px;height:240px}
 #heroLaps .n{position:absolute;left:0;top:130px;width:480px;text-align:center;
@@ -349,7 +351,9 @@ button{font-family:inherit;color:inherit;background:none;border:none;text-align:
 
 
 /* Left half: the numbers, three rows of two rather than two rows of three, so
-   the right half is free for the heart. */
+   the right half is free for the phone QR code. Average and peak heart rate
+   moved in here when the code took the heart panel's place (2026-11-21); the
+   time-in-zone bars went from the summary, and stay in the .fit file. */
 .sum .grid{position:absolute;left:70px;top:246px;width:552px;display:flex;flex-wrap:wrap}
 .sum .grid .cell{width:264px;height:88px;margin:0 24px 16px 0;position:relative;
                  background:var(--panel);border:1px solid var(--line);border-radius:10px}
@@ -358,26 +362,15 @@ button{font-family:inherit;color:inherit;background:none;border:none;text-align:
 .sum .grid .vv{position:absolute;left:18px;top:38px;font-size:36px;font-weight:500}
 .sum .grid .vv .u{font-size:16px;color:var(--dim)}
 
-/* ---- summary: the heart --------------------------------------------------
-   The one thing the six cells could never say. Average and peak need nobody's
-   age; the zone bars need one, and say so plainly when it is missing rather
-   than drawing five empty rows or inventing a maximum. */
-.sum .heart{position:absolute;left:658px;top:246px;width:552px;height:312px;
-            background:var(--panel);border:1px solid var(--line);border-radius:10px}
-.sum .heart .kk{position:absolute;left:24px;top:18px;font-size:11px;
-                letter-spacing:.24em;color:var(--dim)}
-.sum .heart .big{position:absolute;left:24px;top:44px;font-size:36px;font-weight:500;color:var(--hot)}
-.sum .heart .big .u{font-size:15px;color:var(--dim);letter-spacing:.16em}
-.sum .heart .peak{position:absolute;right:24px;top:52px;font-size:20px;color:var(--soft)}
-.sum .heart .peak .u{font-size:12px;color:var(--dim);letter-spacing:.16em}
-.sum .zones{position:absolute;left:24px;top:104px;width:504px}
-.sum .zrow{display:flex;align-items:center;height:34px}
-.sum .zrow .zn{width:104px;font-size:13px;color:var(--soft)}
-.sum .zrow .zt{flex:1;height:12px;background:var(--hair);border-radius:6px;overflow:hidden}
-.sum .zrow .zf{height:12px;border-radius:6px;transition:width .4s ease}
-.sum .zrow .zv{width:74px;text-align:right;font-size:13px;color:var(--dim)}
-.sum .heart .none{position:absolute;left:24px;top:120px;width:504px;
-                  font-size:16px;line-height:1.5;color:var(--dim)}
+.sum .grid .hr .vv{color:var(--hot)}
+
+/* ---- summary: the walk to a phone ----------------------------------------
+   The QR code, shown as soon as the summary is: it is the main way a walk
+   leaves the console. STRIDE.phoneInline fills the box; it is centred in the
+   right half, where the heart panel was. Its caption hangs below the box and
+   wraps to two lines, so the box stops at 520 and the caption clears the
+   badges at 576. */
+.sum .qr{position:absolute;left:794px;top:240px;width:280px;height:280px}
 
 /* ---- summary: what this walk beat ---------------------------------------- */
 .sum .badges{position:absolute;left:70px;top:576px;width:1140px;
@@ -479,9 +472,9 @@ button{font-family:inherit;color:inherit;background:none;border:none;text-align:
       <button class="bay" id="pickCasual">
         <span class="nm">MANUAL</span>
         <span class="sub">You hold speed and incline. Laps counted.</span></button>
-      <button class="bay pick" id="pickGuided">
-        <span class="nm">GUIDED</span>
-        <span class="sub">Incline follows a profile. Speed stays yours.</span></button>
+      <button class="bay pick" id="pickSession">
+        <span class="nm">SESSION</span>
+        <span class="sub">Intervals or progression</span></button>
       <button class="bay gone" id="pickRoutes">
         <span class="nm">ROUTES</span>
         <span class="sub">Ground you have walked, replayed by distance.</span></button>
@@ -489,9 +482,7 @@ button{font-family:inherit;color:inherit;background:none;border:none;text-align:
   </div>
 
   <div class="step gone" id="stPlan">
-    <div class="cap" id="capHow" style="top:100px">DURATION</div>
-    <div class="mins" id="mins"></div>
-    <div class="cap" id="capShape" style="top:274px">INCLINE PROFILE</div>
+    <div class="cap" id="capShape" style="top:274px">WHICH ROUTE</div>
     <div class="shapes" id="shapes"></div>
   </div>
 
@@ -519,8 +510,9 @@ button{font-family:inherit;color:inherit;background:none;border:none;text-align:
       <circle cx="150" cy="150" r="120" fill="none" stroke="#20262a" stroke-width="12"/>
       <circle id="spdArc" cx="150" cy="150" r="120" fill="none" stroke="#eef3f5" stroke-width="12"
               pathLength="1000" stroke-dasharray="0 1000" transform="rotate(-90 150 150)"/>
-      <!-- The plan's suggestion, as a tick on the bezel. The plan never
-           applies it; tapping it does. -->
+      <!-- The plan's suggestion, as a tick on the bezel. On a route the plan
+           never applies it; tapping it does. In a session it marks the speed
+           the plan is holding. -->
       <circle id="spdTick" cx="150" cy="150" r="120" fill="none" stroke="#e5b567" stroke-width="12"
               pathLength="1000" stroke-dasharray="0 1000" transform="rotate(-90 150 150)"/>
     </svg>
@@ -531,6 +523,7 @@ button{font-family:inherit;color:inherit;background:none;border:none;text-align:
 
   <div class="centre">
     <div class="k" id="centreLabel">&mdash;</div>
+    <button class="next" id="btnNext">NEXT &rsaquo;</button>
 
     <div class="hero" id="heroLaps">
       <svg viewBox="0 0 480 240">
@@ -613,25 +606,18 @@ button{font-family:inherit;color:inherit;background:none;border:none;text-align:
   <div class="h" id="sumHead">Nice work</div>
   <div class="sumdate" id="sumDate" hidden>DATE UNKNOWN &middot; THE CONSOLE CLOCK WAS NOT SET DURING THIS WORKOUT</div>
   <button class="lapspill" id="lapsPill" hidden>LAPS</button>
-  <!-- Mirrors the laps pill: the walk's .fit to a phone, by QR code (fork-only). -->
-  <button class="lapspill" id="phonePill" style="left:44px;right:auto">TO PHONE &rsaquo;</button>
   <div class="lapsheet" id="lapSheet" hidden><div class="lk">LAPS</div><div class="laptable"><table><thead><tr><th>LAP</th><th>TIME</th><th>DISTANCE</th><th>PACE</th><th>AVG HR</th><th>AVG POWER</th><th>CLIMB</th></tr></thead><tbody id="lapRows"></tbody></table></div><div class="lhint">TAP ANYWHERE TO CLOSE</div></div>
   <div class="grid">
     <div class="cell"><div class="kk">TIME</div><div class="vv mono" id="sumTime">0:00</div></div>
     <div class="cell last"><div class="kk">DISTANCE</div><div class="vv mono"><span id="sumDist">0.00</span><span class="u"> KM</span></div></div>
-    <div class="cell"><div class="kk">CALORIES</div><div class="vv mono" id="sumCals">0</div></div>
-    <div class="cell last"><div class="kk">CLIMBED</div><div class="vv mono"><span id="sumClimb">0</span><span class="u"> M</span></div></div>
+    <div class="cell hr"><div class="kk">AVG HEART RATE</div><div class="vv mono"><span id="sumHrAvg">——</span><span class="u"> BPM</span></div></div>
+    <div class="cell last hr"><div class="kk">PEAK HEART RATE</div><div class="vv mono"><span id="sumHrMax">——</span><span class="u"> BPM</span></div></div>
     <div class="cell"><div class="kk">AVG SPEED</div><div class="vv mono"><span id="sumAvg">0.0</span><span class="u"> KM/H</span></div></div>
     <div class="cell last"><div class="kk">MAX SPEED</div><div class="vv mono"><span id="sumMax">0.0</span><span class="u"> KM/H</span></div></div>
   </div>
 
-  <div class="heart" id="sumHeart">
-    <div class="kk">HEART</div>
-    <div class="big mono"><span id="sumHrAvg">——</span><span class="u"> BPM AVG</span></div>
-    <div class="peak mono"><span id="sumHrMax">——</span><span class="u"> PEAK</span></div>
-    <div class="zones" id="sumZones"></div>
-    <div class="none" id="sumZonesNone"></div>
-  </div>
+  <!-- The walk's .fit to a phone, by QR code, straight away (fork-only). -->
+  <div class="qr" id="sumQr"></div>
 
   <div class="badges" id="sumBadges"></div>
   <button class="done" id="btnDone"><span class="lab">DONE</span></button>
@@ -664,10 +650,12 @@ button{font-family:inherit;color:inherit;background:none;border:none;text-align:
 
 <script src="stride-core.js"></script>
 <script src="stride-settings.js"></script>
+<script src="stride-session.js"></script>
 <script>
 const standalone = STRIDE.stub();
 
-/* The plan's suggested pace, so tapping it can take it. */
+/* The plan's suggested pace, so tapping it can take it. Zero during a
+   session, whose caption shows the speed the plan is already holding. */
 let suggestKph = 0;
 const $ = STRIDE.$, tap = STRIDE.tap, mmss = STRIDE.mmss, nf = STRIDE.nf;
 
@@ -758,27 +746,10 @@ function buildPeople(){
 buildPeople();
 document.addEventListener('stride-settings-closed', buildPeople);
 
-STRIDE.DURATIONS.forEach(m => {
-  const b = document.createElement('button');
-  b.className = 'bay' + (m === flow.minutes ? ' pick' : '');
-  // Zero-padded: this is the direction where a column of figures should line up.
-  b.innerHTML = '<span class="nm mono">' +
-                (m <= 0 ? 'OPEN' : m < 10 ? '0' + m : m) + '</span>';
-  tap(b, () => {
-    flow.setMinutes(m);
-    [].forEach.call($('mins').children, c => c.classList.toggle('pick', c === b));
-  });
-  $('mins').appendChild(b);
-});
-
-/* Peak and gain rather than a blurb — the instrument reading of a template.
-   Gain assumes a 5 km/h walk, which is what the numbers are for: comparing
-   the four, not predicting the day. */
-/* Peak and gain rather than a blurb — the instrument reading of a profile. For
-   a route both numbers are real rather than assumed: it was measured outdoors,
-   so the gain is its own barometric ascent and not 30 minutes at 5 km/h. */
-/* `routeId` is set only for the route bays, and is what earns the loop mark:
-   a template has no direction to reverse. */
+/* Distance and climb rather than a blurb — the instrument reading of a
+   route. Both numbers are real rather than assumed: it was measured outdoors,
+   so the gain is its own barometric ascent. `routeId` is what earns the loop
+   mark. */
 function bay(title, sub, points, chosen, onPick, routeId) {
   const lo = Math.min.apply(null, points), hi = Math.max.apply(null, points);
   const span = (hi - lo) || 1;
@@ -803,38 +774,24 @@ function bay(title, sub, points, chosen, onPick, routeId) {
   $('shapes').appendChild(b);
 }
 
+/* Up to four routes. Only routes reach this step: a session is set up in its
+   own overlay. */
 function renderPlan() {
   $('shapes').innerHTML = '';
-  const picking = flow.pickingRoute();
-  $('stPlan').classList.toggle('routes', picking);
-  $('capShape').textContent = picking ? 'WHICH ROUTE' : 'INCLINE PROFILE';
-
-  if (picking) {
-    flow.routes().slice(0, 4).forEach(r => {
-      const pts = STRIDE.routePoints(r);
-      /* Looped, the bay reads as the walk it will actually be: twice the
-         ground, and the climb recomputed the way Route.outAndBack does it —
-         an out-and-back's ascent is the outbound climb *plus* the outbound
-         descent, and is not twice anything. */
-      const on = flow.looped(r.id);
-      const km = (r.distance_m || 0) / 1000 * (on ? 2 : 1);
-      const up = on ? STRIDE.loopedClimb(r) : (r.climb_m || 0);
-      bay((r.name || 'Route').toUpperCase(),
-          km.toFixed(2) + ' KM · CLIMB ' + Math.round(up) + ' M' +
-            (on ? ' · BOTH WAYS' : ''),
-          pts, r.id === flow.route, () => flow.setRoute(r.id), r.id);
-    });
-    return;
-  }
-
-  STRIDE.SHAPES.forEach(s => {
-    const hi = Math.max.apply(null, s.points);
-    // 30 minutes at 5 km/h is 2500 m of run; mean grade over that is the gain.
-    const mean = s.points.reduce((a, v) => a + v, 0) / s.points.length;
-    const gain = Math.round(2500 * mean / 100);
-    bay(s.name.toUpperCase(),
-        'PEAK ' + hi.toFixed(1) + '% · GAIN ' + gain + ' M',
-        s.points, s.id === flow.shape, () => flow.setShape(s.id));
+  $('stPlan').classList.add('routes');
+  flow.routes().slice(0, 4).forEach(r => {
+    const pts = STRIDE.routePoints(r);
+    /* Looped, the bay reads as the walk it will actually be: twice the
+       ground, and the climb recomputed the way Route.outAndBack does it —
+       an out-and-back's ascent is the outbound climb *plus* the outbound
+       descent, and is not twice anything. */
+    const on = flow.looped(r.id);
+    const km = (r.distance_m || 0) / 1000 * (on ? 2 : 1);
+    const up = on ? STRIDE.loopedClimb(r) : (r.climb_m || 0);
+    bay((r.name || 'Route').toUpperCase(),
+        km.toFixed(2) + ' KM · CLIMB ' + Math.round(up) + ' M' +
+          (on ? ' · BOTH WAYS' : ''),
+        pts, r.id === flow.route, () => flow.setRoute(r.id), r.id);
   });
 }
 
@@ -846,7 +803,8 @@ function refreshControl() {
 renderPlan();
 
 tap($('pickCasual'), () => flow.setControl('casual'));
-tap($('pickGuided'), () => { flow.setControl('guided'); renderPlan(); });
+// Opens the shared session overlay; closing it comes back to this step.
+tap($('pickSession'), () => flow.setControl('session'));
 tap($('pickRoutes'), () => { flow.setControl('routes'); renderPlan(); });
 tap($('btnBack'),    () => flow.back());
 /* Tapping the suggestion takes it. Accepting the plan's number used to
@@ -855,10 +813,10 @@ tap($('suggest'), () => { if (suggestKph > 0) Stride.setSpeed(suggestKph); });
 tap($('speedK'), swapSpeedUnit);
 tap($('speed'), swapSpeedUnit);
 
-/* Tapping a plan used to arm the belt immediately, so choosing a shape and
-   then a duration was impossible — the walk had already started. Selection
-   and starting are separate now. */
+/* Tapping a route only selects it, so the loop mark can be set before the
+   belt is armed. BEGIN is what starts it. */
 tap($('btnBegin'), () => flow.commit());
+tap($('btnNext'),  () => Stride.nextStep());
 
 /* ---- settings -------------------------------------------------------------- */
 function buildUis(){
@@ -905,7 +863,6 @@ tap($('btnDone'),   () => Stride.home());
 tap($('btnLap'), () => Stride.lap());
 tap($('lapsPill'), () => { $('lapSheet').hidden = false; });
 tap($('lapSheet'), () => { $('lapSheet').hidden = true; });
-tap($('phonePill'), () => STRIDE.phoneSheet('walk'));
 tap($('btnFan'),    () => Stride.fan());
 
 STRIDE.stepper($('btnSpeedUp'),     d => Stride.speed(d),    0.1, 0.5);
@@ -954,6 +911,8 @@ setInterval(() => {
 function showScreen(id){
   if (id === shownScreen) return;
   ['scSetup','scLive','scSummary'].forEach(s => $(s).classList.toggle('on', s === id));
+  // Leaving the summary takes its QR code down and tells the phone server.
+  if (shownScreen === 'scSummary') STRIDE.phoneInlineClear();
   if (id === 'scSetup'){ flow.reset(); STRIDE.resetDerived(); }
   if (id !== 'scSetup') STRIDE_SETTINGS.close();
   if (id !== 'scLive') $('paused').classList.remove('on');
@@ -962,6 +921,7 @@ function showScreen(id){
 }
 
 window.render = function(raw){
+  STRIDE.stepWarning(raw);   // ten seconds before a session step changes
   const s = STRIDE.adapt(raw);
   const screen = STRIDE.screenFor(s);
 
@@ -986,7 +946,9 @@ window.render = function(raw){
   showScreen('scLive');
   shownPhase = s.phase;
   const guided = s.control === 'guided';
+  const session = s.plan.kind === 'session';
   const timed  = s.phase === 'warmup' || s.phase === 'cooldown';
+  $('btnNext').classList.toggle('on', session && s.phase === 'active');
 
   $('modeWord').textContent =
       s.phase === 'warmup'   ? 'WARMING UP'
@@ -1010,15 +972,29 @@ window.render = function(raw){
     dash(s.belt.speed / speedFull()));
 
   $('inclineNote').textContent = !guided ? 'MANUAL'
+                               : session ? 'PLAN' + offsetText(s.targets.gradeOffset, ' %')
                                : s.targets.inclineAuto ? 'PROFILE' : 'MANUAL OVERRIDE';
 
-  /* The suggestion is a bezel tick and a caption, not a needle. Nothing on the
-     console may act on it — the pace belongs to whoever is on the belt. */
-  const suggesting = guided && s.targets.suggest > 0 && !timed;
-  suggestKph = suggesting ? s.targets.suggest : 0;
-  $('suggest').textContent = suggesting ? 'TGT ' + speedText(s.targets.suggest) : '';
-  $('spdTick').setAttribute('stroke-dasharray',
-    suggesting ? tick(s.targets.suggest / speedFull()) : '0 1000');
+  /* The suggestion is a bezel tick and a caption, not a needle. On a route
+     nothing on the console may act on it — the pace belongs to whoever is on
+     the belt. A session is the one exception: the plan drives the belt there,
+     so the tick and caption state what it is holding (with the walker's own
+     nudge, always in km/h because that is what a press moves) and are not
+     something to tap. */
+  if (session){
+    const holding = s.targets.pace > 0 && !timed;
+    suggestKph = 0;
+    $('suggest').textContent = holding ? 'PLAN ' + speedText(s.targets.pace) +
+      offsetText(s.targets.speedOffset, ' KM/H') : '';
+    $('spdTick').setAttribute('stroke-dasharray',
+      holding ? tick(s.targets.pace / speedFull()) : '0 1000');
+  } else {
+    const suggesting = guided && s.targets.suggest > 0 && !timed;
+    suggestKph = suggesting ? s.targets.suggest : 0;
+    $('suggest').textContent = suggesting ? 'TGT ' + speedText(s.targets.suggest) : '';
+    $('spdTick').setAttribute('stroke-dasharray',
+      suggesting ? tick(s.targets.suggest / speedFull()) : '0 1000');
+  }
 
   $('elapsed').textContent = mmss(s.session.elapsed);
   $('dist').textContent    = STRIDE.km(s.session.distance);
@@ -1041,8 +1017,12 @@ window.render = function(raw){
 
   const hero = timed ? 'heroWarm' : guided ? 'heroPath' : 'heroLaps';
   ['heroLaps','heroPath','heroWarm'].forEach(h => $(h).classList.toggle('on', h === hero));
+  /* In a session the bay's title says what the next step's speed will be,
+     since it is the plan, not the walker, that will change it. */
   $('centreLabel').textContent =
       timed  ? (s.phase === 'warmup' ? 'WARM-UP' : 'COOL-DOWN')
+    : session && s.segment.nextSpeed > 0
+             ? 'NEXT ' + speedText(s.segment.nextSpeed) + (speedAsPace ? ' /KM' : ' KM/H')
     : guided ? 'INCLINE PROFILE'
     : 'LAP COUNTER';
 
@@ -1060,6 +1040,13 @@ window.render = function(raw){
       : STRIDE.km(s.session.distance) + ' KM';
   }
 };
+
+/* A press during a session shifts the plan rather than taking it over; this
+   is that shift, as " +0.3", or nothing while there is none. */
+function offsetText(v, unit){
+  if (!v || Math.abs(v) < 0.05) return '';
+  return ' ' + (v > 0 ? '+' : '−') + Math.abs(v).toFixed(1) + unit;
+}
 
 /**
  * The heart-rate chip in the chrome bar, on whatever screen is showing.
@@ -1179,6 +1166,7 @@ function renderLapTable(s){
 
 function renderSummary(s){
   renderLapTable(s);
+  STRIDE.phoneInline($('sumQr'));
   $('sumKind').textContent = ('SESSION COMPLETE · ' +
     (s.plan.name || 'MANUAL') +
     ' ' + Math.round(s.session.elapsed / 60)).toUpperCase();
@@ -1186,57 +1174,14 @@ function renderSummary(s){
 
   $('sumTime').textContent  = mmss(s.session.elapsed);
   $('sumDist').textContent  = STRIDE.km(s.session.distance);
-  $('sumCals').textContent  = nf(s.session.calories);
   $('sumAvg').textContent   = s.session.avgSpeed.toFixed(1);
   $('sumMax').textContent   = s.session.maxSpeed.toFixed(1);
-  $('sumClimb').textContent = Math.round(s.session.climb);
-  renderHeartPanel(s);
-  renderBadges(s);
-}
-
-/**
- * Average, peak and time-in-zone for the walk just finished.
- *
- * Three states, and all three happen: a strap that read (zones, if an age is
- * set), a strap that read with no age on file (average and peak, which need
- * nobody's), and no strap at all. The last is the common case for a guest and
- * must not look like a fault.
- */
-function renderHeartPanel(s){
+  // A dash rather than a zero when no strap read: a guest without one is the
+  // common case and must not look like a fault, or a heart that stopped.
   const avg = s.session.avgPulse, peak = s.session.maxPulse;
   $('sumHrAvg').textContent = avg > 0 ? avg : '——';
   $('sumHrMax').textContent = peak > 0 ? peak : '——';
-
-  const rows = STRIDE.zoneRows(s.session.zones);
-  const zonesEl = $('sumZones'), noneEl = $('sumZonesNone');
-  zonesEl.innerHTML = '';
-  if (rows.length){
-    noneEl.textContent = '';
-    rows.forEach(r => {
-      const row = document.createElement('div');
-      row.className = 'zrow';
-      const name = document.createElement('div');
-      name.className = 'zn'; name.textContent = r.name;
-      const track = document.createElement('div');
-      track.className = 'zt';
-      const fill = document.createElement('div');
-      fill.className = 'zf';
-      fill.style.width = (r.share * 100).toFixed(1) + '%';
-      fill.style.background = r.colour;
-      track.appendChild(fill);
-      const val = document.createElement('div');
-      val.className = 'zv mono';
-      val.textContent = Math.round(r.secs / 60) + ' min';
-      row.appendChild(name); row.appendChild(track); row.appendChild(val);
-      zonesEl.appendChild(row);
-    });
-  } else if (avg > 0){
-    /* Read, but no age on file, so there is no maximum to divide by. Say what
-       is missing and where it lives — a blank panel reads as broken. */
-    noneEl.textContent = 'Add your age or heart-rate zones in Settings to see time in each zone.';
-  } else {
-    noneEl.textContent = 'No heart rate recorded for this workout.';
-  }
+  renderBadges(s);
 }
 
 /** What this walk beat, or nothing at all — see History.achievements. */

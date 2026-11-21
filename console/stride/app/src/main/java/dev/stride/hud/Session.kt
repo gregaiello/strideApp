@@ -151,7 +151,7 @@ data class Snapshot(
     val achievements: List<String> = emptyList(),
     /** Who tapped their name on the welcome screen. */
     val who: String = "",
-    /** Guided walk, or empty on a casual one. */
+    /** The session or route being walked, or empty on a casual one. */
     val plan: String = "",
     val segment: Int = 0,
     val segments: Int = 0,
@@ -164,20 +164,25 @@ data class Snapshot(
     /** The segment after this one, so the HUD can warn before it arrives. */
     val nextLabel: String = "",
     val nextIncline: Double = 0.0,
-    /** Total plan length in seconds — one lap on a circuit. */
+    /** The next step's belt speed in a session; 0 on a route. */
+    val nextSpeed: Double = 0.0,
+    /** Total plan length: seconds in a session, metres on a route. */
     val planTotalSec: Double = 0.0,
     /** Total ascent of the plan in metres, when it is known — a route carries
-     *  its own, measured from the walk it came from. Zero for templates, whose
+     *  its own, measured from the walk it came from. Zero for sessions, whose
      *  climb depends on how fast you take them. */
     val planClimbM: Double = 0.0,
     /** The steepest gradient anywhere in the plan. */
     val planPeakIncline: Double = 0.0,
-    /** Plan time wrapped into the current lap. Equals elapsed unless looping. */
+    /** Plan time, including anything NEXT or END skipped in a session. */
     val planElapsed: Double = 0.0,
-    /** Which lap of an open-ended circuit; 1 for an ordinary walk. */
-    val planLap: Int = 1,
-    /** True when the route is a circuit with no end but STOP. */
-    val planLoops: Boolean = false,
+    /** `session`, `route`, or empty on a casual walk. */
+    val planKind: String = "",
+    /** The speed a session is holding the belt to now, offset included; 0 off one. */
+    val targetPace: Double = 0.0,
+    /** A press during a session, kept as an offset from the step (km/h, %). */
+    val speedOffset: Double = 0.0,
+    val gradeOffset: Double = 0.0,
     /** Pace the plan is suggesting, km/h. 0 when it has no opinion. */
     val suggestPace: Double = 0.0,
     /** False once a manual incline press has taken the deck back for this segment. */
@@ -319,8 +324,11 @@ data class Snapshot(
         append("\"planClimbM\":${num("%.0f", planClimbM)},")
         append("\"planPeakIncline\":${num("%.1f", planPeakIncline)},")
         append("\"planElapsed\":${num("%.0f", planElapsed)},")
-        append("\"planLap\":$planLap,")
-        append("\"planLoops\":$planLoops,")
+        append("\"planKind\":\"$planKind\",")
+        append("\"nextSpeed\":${num("%.1f", nextSpeed)},")
+        append("\"targetPace\":${num("%.1f", targetPace)},")
+        append("\"speedOffset\":${num("%.1f", speedOffset)},")
+        append("\"gradeOffset\":${num("%.1f", gradeOffset)},")
         append("\"suggestPace\":${num("%.1f", suggestPace)},")
         append("\"inclineAuto\":$inclineAuto,")
         append("\"lap\":$lap,")
